@@ -4,11 +4,13 @@
 // process termination), and the Tauri app setup with system tray.
 
 mod dock;
+mod geom;
 mod metrics;
 mod notes;
 mod settings;
 
 use dock::DockStore;
+use geom::GeomStore;
 use metrics::SystemMetrics;
 use notes::NotesStore;
 use settings::SettingsStore;
@@ -25,6 +27,7 @@ struct AppState {
     metrics: Mutex<SystemMetrics>,
     notes: Mutex<NotesStore>,
     dock: Mutex<DockStore>,
+    geom: Mutex<GeomStore>,
     settings: Mutex<SettingsStore>,
 }
 
@@ -38,11 +41,13 @@ pub fn run() {
             let metrics = SystemMetrics::new();
             let notes = NotesStore::new(app.handle())?;
             let dock_store = DockStore::new(app.handle())?;
+            let geom_store = GeomStore::new(app.handle())?;
             let settings = SettingsStore::new(app.handle())?;
             let state = AppState {
                 metrics: Mutex::new(metrics),
                 notes: Mutex::new(notes),
                 dock: Mutex::new(dock_store),
+                geom: Mutex::new(geom_store),
                 settings: Mutex::new(settings),
             };
             app.manage(state);
@@ -131,10 +136,14 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Restore the previous window geometry if persisted.
+            // Restore floating geometry (only meaningful when not docked).
             if let Some(window) = app.get_webview_window("main") {
-                if let Ok(pos) = window.outer_position() {
-                    let _ = window.set_position(pos);
+                let dock_cfg = app.state::<AppState>().dock.lock().unwrap().get();
+                if dock_cfg.edge() == dock::DockEdge::None {
+                    let g = app.state::<AppState>().geom.lock().unwrap().get();
+                    use tauri::{LogicalPosition, LogicalSize};
+                    let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
+                    let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
                 }
             }
 
@@ -175,6 +184,16 @@ pub fn run() {
                     Some(w) => w,
                     None => return,
                 };
+                // Persist floating geometry (position) on every move while floating.
+                if let (Ok(pos), Ok(outer)) = (wv.outer_position(), wv.outer_size()) {
+                    let g = geom::WindowGeom {
+                        x: pos.x,
+                        y: pos.y,
+                        width: outer.width,
+                        height: outer.height,
+                    };
+                    let _ = state.geom.lock().unwrap().set(&g);
+                }
                 if let Some(detected) = dock::detect_edge(&wv) {
                     let d = match detected {
                         dock::DockEdge::Left => "left".to_string(),
@@ -201,6 +220,21 @@ pub fn run() {
                         "height": size.height as f64 / scale,
                     }),
                 );
+                // Persist floating geometry (size) when not docked.
+                let st = window.state::<AppState>();
+                if st.dock.lock().unwrap().get().edge() == dock::DockEdge::None {
+                    if let (Ok(pos), Ok(outer)) =
+                        (window.outer_position(), window.outer_size())
+                    {
+                        let g = geom::WindowGeom {
+                            x: pos.x,
+                            y: pos.y,
+                            width: outer.width,
+                            height: outer.height,
+                        };
+                        let _ = st.geom.lock().unwrap().set(&g);
+                    }
+                }
             }
             _ => {}
         })

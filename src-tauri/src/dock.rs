@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub enum DockEdge {
@@ -66,7 +66,7 @@ impl DockStore {
         if !self.path.exists() {
             let default = DockConfig {
                 edge: "right".to_string(),
-                width: 360,
+                width: 390,
                 always_on_top: true,
             };
             fs::write(&self.path, serde_json::to_string_pretty(&default).unwrap())
@@ -115,8 +115,18 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
             .flatten()
             .ok_or_else(|| "no monitor available".to_string())?
     };
-    let msize: PhysicalSize<u32> = *monitor.size();
-    let mpos: PhysicalPosition<i32> = *monitor.position();
+    // Monitor geometry. We want the window `width` CSS pixels wide on screen
+    // regardless of display scale, so work in LOGICAL coordinates: convert the
+    // monitor's physical size/position to logical by dividing by the scale factor.
+    // (Sizing in physical pixels caused content to be clipped on scaled displays.)
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let phys_size = *monitor.size();
+    let phys_pos = *monitor.position();
+    let m_w = phys_size.width as f64 / scale;
+    let m_h = phys_size.height as f64 / scale;
+    let m_x = phys_pos.x as f64 / scale;
+    let m_y = phys_pos.y as f64 / scale;
+    let width_f = width as f64;
 
     match edge {
         DockEdge::None => {
@@ -125,15 +135,14 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
             Ok(())
         }
         DockEdge::Left | DockEdge::Right => {
-            let height = msize.height;
             let x = if edge == DockEdge::Right {
-                mpos.x + msize.width as i32 - width as i32
+                m_x + m_w - width_f
             } else {
-                mpos.x
+                m_x
             };
             let _ = window.set_resizable(false);
-            let _ = window.set_size(PhysicalSize::new(width, height));
-            let _ = window.set_position(PhysicalPosition::new(x, mpos.y));
+            let _ = window.set_size(LogicalSize::new(width_f, m_h));
+            let _ = window.set_position(LogicalPosition::new(x, m_y));
             let _ = window.set_always_on_top(cfg.always_on_top);
             // When docked as a sidebar, skip the taskbar so it doesn't take a slot.
             let _ = window.set_skip_taskbar(true);

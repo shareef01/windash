@@ -9,21 +9,21 @@ function fmtGb(b: number): string {
   return gb >= 1024 ? `${(gb / 1024).toFixed(1)} TB` : `${gb.toFixed(0)} GB`;
 }
 
+function color(pct: number): string {
+  return pct >= 85 ? "var(--red)" : pct >= 60 ? "var(--amber)" : "var(--accent)";
+}
+
 export function DiskList({ disks }: Props) {
   if (!disks || disks.length === 0) return null;
   return (
-    <div className="card disk-card">
-      <h3>Disks</h3>
+    <section className="section">
+      <div className="section-head">
+        <span className="section-title">Disks</span>
+      </div>
       <div className="disk-list">
         {disks.map((d) => {
           const used = d.total - d.available;
           const pct = d.total > 0 ? (used / d.total) * 100 : 0;
-          const color =
-            pct >= 85
-              ? "var(--danger)"
-              : pct >= 60
-              ? "var(--warn)"
-              : "var(--accent)";
           return (
             <div className="disk-row" key={d.mount_point + d.name}>
               <div className="disk-head">
@@ -33,10 +33,7 @@ export function DiskList({ disks }: Props) {
               <div className="track">
                 <div
                   className="fill"
-                  style={{
-                    width: `${pct}%`,
-                    background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-                  }}
+                  style={{ width: `${pct}%`, background: color(pct) }}
                 />
               </div>
               <div className="disk-foot">
@@ -46,6 +43,6 @@ export function DiskList({ disks }: Props) {
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }

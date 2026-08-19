@@ -4,31 +4,29 @@ interface Props {
   pct: number;
 }
 
+function color(v: number): string {
+  return v >= 85 ? "var(--red)" : v >= 60 ? "var(--amber)" : "var(--accent)";
+}
+
 export function MemBar({ usedMb, totalMb, pct }: Props) {
   const usedGb = (usedMb / 1024).toFixed(1);
   const totalGb = (totalMb / 1024).toFixed(1);
-  const color =
-    pct >= 85 ? "var(--danger)" : pct >= 60 ? "var(--warn)" : "var(--accent)";
-
   return (
-    <div className="bar-card">
-      <div className="bar-top">
-        <span className="bar-label">Memory</span>
-        <span className="bar-readout">
+    <div className="stat">
+      <div className="stat-top">
+        <span className="stat-label">Memory</span>
+        <span className="stat-val">
           {usedGb}
-          <span className="bar-dim"> / {totalGb} GB</span>
+          <span className="stat-unit"> / {totalGb} GB</span>
         </span>
       </div>
       <div className="track">
         <div
           className="fill"
-          style={{
-            width: `${Math.max(0, Math.min(100, pct))}%`,
-            background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-          }}
+          style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color(pct) }}
         />
       </div>
-      <div className="bar-foot">{pct.toFixed(0)}% utilized</div>
+      <div className="stat-sub">{pct.toFixed(0)}% utilized</div>
     </div>
   );
 }

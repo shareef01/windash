@@ -102,7 +102,7 @@ export default function App() {
 
       {error && <div className="error">⚠ {error}</div>}
 
-      <div className="hero">
+      <div className="stats-grid">
         <Gauge
           label="CPU"
           value={metrics?.cpu_percent ?? 0}

@@ -1,21 +1,20 @@
 import type { DockConfig } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 
 interface Props {
   dock: DockConfig | null;
   onDock: (edge: "none" | "left" | "right") => void;
-  onMinimize: () => void;
-  onClose: () => void;
 }
 
-export function DockBar({ dock, onDock, onMinimize, onClose }: Props) {
+export function DockBar({ dock, onDock }: Props) {
   const edge = dock?.edge ?? "right";
   const dotColor = edge === "none" ? "var(--muted)" : "var(--accent)";
   return (
     <div className="header">
-      <span className="wordmark" data-tauri-drag-region>
+      <div className="wordmark" data-tauri-drag-region>
         <span className="dot" style={{ background: dotColor }} />
-        <span data-tauri-drag-region>Windash</span>
-      </span>
+        <span>Windash</span>
+      </div>
       <span className="dock-controls">
         <button className="iconbtn" onClick={() => onDock("left")} title="Dock left">
           ◧
@@ -27,10 +26,18 @@ export function DockBar({ dock, onDock, onMinimize, onClose }: Props) {
           ▢
         </button>
         <span className="sep" />
-        <button className="iconbtn" onClick={onMinimize} title="Minimize">
+        <button
+          className="iconbtn"
+          onClick={() => invoke("window_minimize")}
+          title="Minimize"
+        >
           &#8211;
         </button>
-        <button className="iconbtn iconbtn-close" onClick={onClose} title="Close">
+        <button
+          className="iconbtn iconbtn-close"
+          onClick={() => invoke("window_hide")}
+          title="Close to tray"
+        >
           &#10005;
         </button>
       </span>

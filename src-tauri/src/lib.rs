@@ -109,6 +109,8 @@ pub fn run() {
             get_dock,
             set_dock,
             apply_immersive,
+            window_minimize,
+            window_hide,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -184,4 +186,24 @@ fn set_dock(
     drop(store);
     dock::apply_dock(&window, &cfg)?;
     Ok(cfg)
+}
+
+/// Minimize the main window (reliable OS-level call from Rust, avoiding the
+/// frontend window-handle API which can fail on a docked/resizable-locked window).
+#[tauri::command]
+fn window_minimize(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.minimize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Hide the main window to the tray (recoverable via the tray icon), rather than
+/// terminating the app — keeps the system monitor running in the background.
+#[tauri::command]
+fn window_hide(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

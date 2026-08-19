@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { MetricsSnapshot, Note, DockConfig } from "./types";
 import {
@@ -101,17 +100,9 @@ export default function App() {
     }
   }
 
-  const win = getCurrentWindow();
-  function minimize() {
-    win.minimize();
-  }
-  function closeWindow() {
-    win.hide();
-  }
-
   return (
     <div className="app">
-      <DockBar dock={dock} onDock={setDock} onMinimize={minimize} onClose={closeWindow} />
+      <DockBar dock={dock} onDock={setDock} />
 
       {error && <div className="error">⚠ {error}</div>}
 

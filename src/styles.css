@@ -540,3 +540,27 @@ body {
 .proc-cpu {
   vertical-align: middle;
 }
+
+/* ---------- Responsive layout modes (driven by window width) ---------- */
+/* compact: tighten everything, hide secondary text. */
+.layout-compact .section {
+  padding: 8px 0;
+}
+.layout-compact .stats-grid {
+  gap: 8px;
+}
+.layout-compact .section-head {
+  font-size: 9px;
+}
+.layout-compact .proc-row {
+  min-height: 18px;
+  font-size: 10px;
+}
+.layout-compact .status-time {
+  display: none;
+}
+/* expanded: more breathing room, larger network chart headroom. */
+.layout-expanded .section {
+  padding: 14px 0;
+}
+

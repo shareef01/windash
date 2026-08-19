@@ -20,7 +20,7 @@ struct AppState {
     notes: Mutex<NotesStore>,
 }
 
-fn main() {
+fn run() {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
     tauri::Builder::default()

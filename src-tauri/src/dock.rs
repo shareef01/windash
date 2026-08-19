@@ -143,3 +143,47 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
         }
     }
 }
+
+/// How close (logical px) the window's left/right edge must be to a monitor edge
+/// before we treat a drag as an intentional dock gesture.
+const SNAP_THRESHOLD: f64 = 48.0;
+
+/// Given the window's current top-left position, decide whether it should snap
+/// to the left or right edge of its current monitor. Returns None when it is not
+/// close enough to any edge (so a drag in open space leaves the window floating).
+///
+/// Uses the monitor *work area* (excludes the taskbar) so a docked sidebar never
+/// sits underneath the taskbar.
+pub fn detect_edge(window: &WebviewWindow) -> Option<DockEdge> {
+    let monitor = window.current_monitor().ok().flatten()?;
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let wa = monitor.work_area();
+    let w_w = wa.size.width as f64 / scale;
+    let w_h = wa.size.height as f64 / scale;
+    let w_x = wa.position.x as f64 / scale;
+    let w_y = wa.position.y as f64 / scale;
+
+    let pos = window.outer_position().ok()?;
+    let px = pos.x as f64 / scale;
+    let py = pos.y as f64 / scale;
+    let size = window.outer_size().ok()?;
+    let win_w = size.width as f64 / scale;
+
+    // Right edge of the window vs. right edge of the work area.
+    let dist_right = (w_x + w_w) - (px + win_w);
+    // Left edge of the window vs. left edge of the work area.
+    let dist_left = px - w_x;
+
+    if dist_right <= SNAP_THRESHOLD && dist_right >= -SNAP_THRESHOLD {
+        // Also require the window to be reasonably tall / near the vertical span.
+        if py > w_y - SNAP_THRESHOLD && py < w_y + w_h {
+            return Some(DockEdge::Right);
+        }
+    }
+    if dist_left <= SNAP_THRESHOLD && dist_left >= -SNAP_THRESHOLD {
+        if py > w_y - SNAP_THRESHOLD && py < w_y + w_h {
+            return Some(DockEdge::Left);
+        }
+    }
+    None
+}

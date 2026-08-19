@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { MetricsSnapshot, Note, DockConfig, Settings, SortKey } from "./types";
 import {
@@ -31,7 +32,12 @@ export default function App() {
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [width, setWidth] = useState<number>(390);
   const timer = useRef<number | null>(null);
+
+  // Derive a responsive layout mode from the current window width.
+  const layout: "compact" | "normal" | "expanded" =
+    width < 320 ? "compact" : width > 480 ? "expanded" : "normal";
 
   async function refresh() {
     try {
@@ -90,6 +96,20 @@ export default function App() {
     };
   }, []);
 
+  // React to native window events emitted from Rust (resize / auto-dock).
+  useEffect(() => {
+    let unlisten: Array<() => void> = [];
+    listen<{ width: number; height: number }>("windash://resized", (e) => {
+      setWidth(e.payload.width);
+    }).then((u) => unlisten.push(u));
+    listen<string>("windash://dock", (e) => {
+      setDockState((prev) =>
+        prev ? { ...prev, edge: e.payload as DockConfig["edge"] } : prev
+      );
+    }).then((u) => unlisten.push(u));
+    return () => unlisten.forEach((u) => u());
+  }, []);
+
   // Re-arm the interval when the refresh setting changes.
   useEffect(() => {
     if (timer.current) window.clearInterval(timer.current);
@@ -121,7 +141,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app layout-${layout}`}>
       <DockBar
         dock={dock}
         onDock={setDock}

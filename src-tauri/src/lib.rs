@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
     image::Image,
 };
 
@@ -134,6 +134,49 @@ pub fn run() {
             update_settings,
             set_always_on_top,
         ])
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Moved(_pos) => {
+                // Only auto-dock while floating (a docked sidebar is not movable).
+                let state = window.state::<AppState>();
+                let edge = { state.dock.lock().unwrap().get().edge };
+                if edge != "none" {
+                    return;
+                }
+                // The event gives a `&Window`; get the `WebviewWindow` for the
+                // docking helpers.
+                let wv = match window.get_webview_window("main") {
+                    Some(w) => w,
+                    None => return,
+                };
+                if let Some(detected) = dock::detect_edge(&wv) {
+                    let d = match detected {
+                        dock::DockEdge::Left => "left".to_string(),
+                        dock::DockEdge::Right => "right".to_string(),
+                        dock::DockEdge::None => "none".to_string(),
+                    };
+                    // Snap + persist.
+                    let store = state.dock.lock().unwrap();
+                    let mut cfg = store.get();
+                    cfg.edge = d.clone();
+                    let _ = store.set(&cfg);
+                    drop(store);
+                    let _ = dock::apply_dock(&wv, &cfg);
+                    // Tell the frontend the dock mode changed.
+                    let _ = window.emit("windash://dock", d);
+                }
+            }
+            tauri::WindowEvent::Resized(size) => {
+                let scale = window.scale_factor().unwrap_or(1.0);
+                let _ = window.emit(
+                    "windash://resized",
+                    serde_json::json!({
+                        "width": size.width as f64 / scale,
+                        "height": size.height as f64 / scale,
+                    }),
+                );
+            }
+            _ => {}
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

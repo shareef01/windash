@@ -17,12 +17,14 @@ export interface ProcInfo {
   cpu: number;
   mem: number;
   pid: number;
+  exe: string;
 }
 
 export interface MetricsSnapshot {
   timestamp: string;
   cpu_percent: number;
   cpu_cores: number;
+  cpu_brand: string;
   memory_total_mb: number;
   memory_used_mb: number;
   memory_percent: number;
@@ -40,3 +42,16 @@ export interface Note {
   text: string;
   created_at: string;
 }
+
+export interface Settings {
+  always_on_top: boolean;
+  refresh_ms: number;
+  theme: "dark" | "light" | "system";
+  dock_edge: string;
+  show_disks: boolean;
+  show_processes: boolean;
+  show_notes: boolean;
+  show_actions: boolean;
+}
+
+export type SortKey = "cpu" | "mem" | "name";

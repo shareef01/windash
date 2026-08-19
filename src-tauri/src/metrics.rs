@@ -51,6 +51,23 @@ impl SystemMetrics {
         }
     }
 
+    /// Resolve the directory containing a process' executable, for the
+    /// "open file location" action. Returns None if the process isn't found or
+    /// has no usable path.
+    pub fn exe_dir_for_pid(&self, pid: u64) -> Option<String> {
+        let sys = System::new_all();
+        for (p, process) in sys.processes() {
+            if p.as_u32() as u64 == pid {
+                if let Some(exe) = process.exe() {
+                    if let Some(parent) = exe.parent() {
+                        return Some(parent.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn snapshot(&self) -> Result<MetricsSnapshot, String> {
         let sys = &self.system;
 
@@ -99,6 +116,9 @@ impl SystemMetrics {
         let tx_rate = (tx_delta as f64 / secs) as u64;
 
         // Processes — Process::name() returns &OsStr directly in 0.32.
+        // Return a larger pool (top 30 by CPU) so the frontend can re-sort
+        // by CPU/Memory/Name without re-querying. Expose the exe path for the
+        // "open file location" action.
         let process_count = sys.processes().len();
 
         let mut procs: Vec<ProcInfo> = Vec::new();
@@ -106,11 +126,16 @@ impl SystemMetrics {
             let name = process.name().to_string_lossy().to_string();
             let cpu = process.cpu_usage();
             let mem = process.memory();
+            let exe = process
+                .exe()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
             procs.push(ProcInfo {
                 name,
                 cpu,
                 mem,
                 pid: pid.as_u32() as u64,
+                exe,
             });
         }
         procs.sort_by(|a, b| {
@@ -118,7 +143,7 @@ impl SystemMetrics {
                 .partial_cmp(&a.cpu)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        procs.truncate(8);
+        procs.truncate(30);
 
         Ok(MetricsSnapshot {
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -133,6 +158,11 @@ impl SystemMetrics {
             process_count,
             uptime_seconds: System::uptime(),
             os_name: System::name().unwrap_or_default(),
+            cpu_brand: sys
+                .cpus()
+                .first()
+                .map(|c| c.brand().to_string())
+                .unwrap_or_default(),
             top_processes: procs,
         })
     }
@@ -152,6 +182,7 @@ pub struct MetricsSnapshot {
     pub process_count: usize,
     pub uptime_seconds: u64,
     pub os_name: String,
+    pub cpu_brand: String,
     pub top_processes: Vec<ProcInfo>,
 }
 
@@ -170,4 +201,6 @@ pub struct ProcInfo {
     pub cpu: f32,
     pub mem: u64,
     pub pid: u64,
+    /// Absolute path to the executable (may be empty for some system processes).
+    pub exe: String,
 }

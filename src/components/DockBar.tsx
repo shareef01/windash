@@ -4,9 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 interface Props {
   dock: DockConfig | null;
   onDock: (edge: "none" | "left" | "right") => void;
+  onSettings: () => void;
 }
 
-export function DockBar({ dock, onDock }: Props) {
+export function DockBar({ dock, onDock, onSettings }: Props) {
   const edge = dock?.edge ?? "right";
   const dotColor = edge === "none" ? "var(--muted)" : "var(--accent)";
   return (
@@ -24,6 +25,9 @@ export function DockBar({ dock, onDock }: Props) {
         </button>
         <button className="iconbtn" onClick={() => onDock("none")} title="Float">
           ▢
+        </button>
+        <button className="iconbtn" onClick={onSettings} title="Settings">
+          ⚙
         </button>
         <span className="sep" />
         <button

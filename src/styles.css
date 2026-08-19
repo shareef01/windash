@@ -432,3 +432,111 @@ body {
   font-size: 11px;
   margin-bottom: 6px;
 }
+
+/* ---------- Settings popover ---------- */
+.popover {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.popover-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  gap: 10px;
+}
+.row.col {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.row.col label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
+.row select {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.row input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* ---------- Process sorting + header ---------- */
+.sort {
+  display: flex;
+  gap: 4px;
+}
+.sortbtn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.sortbtn.active {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.proc-head {
+  display: grid;
+  grid-template-columns: 1fr 56px 52px;
+  gap: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  padding: 2px 0 4px;
+  text-transform: uppercase;
+}
+.proc-head .num,
+.proc-row .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.proc-row.selected {
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+.proc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proc-mem {
+  color: var(--muted);
+}
+.mini-bar {
+  display: inline-block;
+  height: 4px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.proc-cpu {
+  vertical-align: middle;
+}

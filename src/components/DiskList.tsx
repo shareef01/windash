@@ -1,16 +1,8 @@
 import type { DiskInfo } from "../types";
+import { usageColor, fmtSize } from "../theme";
 
 interface Props {
   disks: DiskInfo[];
-}
-
-function fmtGb(b: number): string {
-  const gb = b / 1024 / 1024 / 1024;
-  return gb >= 1024 ? `${(gb / 1024).toFixed(1)} TB` : `${gb.toFixed(0)} GB`;
-}
-
-function color(pct: number): string {
-  return pct >= 85 ? "var(--red)" : pct >= 60 ? "var(--amber)" : "var(--accent)";
 }
 
 export function DiskList({ disks }: Props) {
@@ -24,6 +16,7 @@ export function DiskList({ disks }: Props) {
         {disks.map((d) => {
           const used = d.total - d.available;
           const pct = d.total > 0 ? (used / d.total) * 100 : 0;
+          const c = usageColor(pct);
           return (
             <div className="disk-row" key={d.mount_point + d.name}>
               <div className="disk-head">
@@ -33,11 +26,11 @@ export function DiskList({ disks }: Props) {
               <div className="track">
                 <div
                   className="fill"
-                  style={{ width: `${pct}%`, background: color(pct) }}
+                  style={{ width: `${pct}%`, background: c }}
                 />
               </div>
               <div className="disk-foot">
-                {fmtGb(used)} / {fmtGb(d.total)}
+                {fmtSize(used)} / {fmtSize(d.total)}
               </div>
             </div>
           );

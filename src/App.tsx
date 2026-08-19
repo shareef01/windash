@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { MetricsSnapshot, Note, DockConfig } from "./types";
 import {
@@ -32,7 +33,9 @@ export default function App() {
     try {
       const m = await invoke<MetricsSnapshot>("get_metrics");
       setMetrics(m);
-      setStream((s) => [...s.slice(-59), m.network_rx_bytes + m.network_tx_bytes]);
+      // Chart history now reflects download rate (rx), which is the value the
+      // user scans first; upload is shown as a secondary label.
+      setStream((s) => [...s.slice(-59), m.network_rx_bytes]);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -51,6 +54,8 @@ export default function App() {
     try {
       const cfg = await invoke<DockConfig>("get_dock");
       setDockState(cfg);
+      // Apply window chrome (borderless + acrylic) now that the window is ready.
+      await invoke("apply_immersive");
       await invoke<DockConfig>("set_dock", { edge: cfg.edge });
     } catch (e) {
       setError(String(e));
@@ -96,9 +101,17 @@ export default function App() {
     }
   }
 
+  const win = getCurrentWindow();
+  function minimize() {
+    win.minimize();
+  }
+  function closeWindow() {
+    win.hide();
+  }
+
   return (
     <div className="app">
-      <DockBar dock={dock} onDock={setDock} />
+      <DockBar dock={dock} onDock={setDock} onMinimize={minimize} onClose={closeWindow} />
 
       {error && <div className="error">⚠ {error}</div>}
 
@@ -135,21 +148,17 @@ export default function App() {
         onDelete={delNote}
       />
 
-      {metrics && (
-        <div className="sysinfo">
-          <span>{metrics.os_name || "Windows"}</span>
-          <span>·</span>
-          <span>{metrics.process_count} processes</span>
-          <span>·</span>
-          <span>up {fmtUptime(metrics.uptime_seconds)}</span>
-        </div>
-      )}
-
-      <footer className="foot">
-        {metrics
-          ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}`
-          : "loading…"}
-      </footer>
+      <div className="statusbar">
+        <span className="status-dot" />
+        <span>
+          {metrics
+            ? `${metrics.os_name || "Windows"} · ${metrics.process_count} processes · up ${fmtUptime(metrics.uptime_seconds)}`
+            : "Collecting system info…"}
+        </span>
+        <span className="status-time">
+          {metrics ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}` : ""}
+        </span>
+      </div>
     </div>
   );
 }

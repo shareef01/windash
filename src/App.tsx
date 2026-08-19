@@ -1,8 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { MetricsSnapshot, Note, ProcInfo, DockConfig } from "./types";
-import { Gauge, MemBar, NetSpark, NotesStrip, QuickActions, DockBar } from "./components";
+import type { MetricsSnapshot, Note, DockConfig } from "./types";
+import {
+  Gauge,
+  MemBar,
+  NetSpark,
+  NotesStrip,
+  QuickActions,
+  DockBar,
+  DiskList,
+  ProcList,
+} from "./components";
+
+function fmtUptime(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}h ${m}m`;
+}
 
 export default function App() {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
@@ -36,8 +51,6 @@ export default function App() {
     try {
       const cfg = await invoke<DockConfig>("get_dock");
       setDockState(cfg);
-      // Re-apply the saved dock now that the window is fully created/visible,
-      // so monitor geometry is available and the position actually takes effect.
       await invoke<DockConfig>("set_dock", { edge: cfg.edge });
     } catch (e) {
       setError(String(e));
@@ -87,35 +100,32 @@ export default function App() {
     <div className="app">
       <DockBar dock={dock} onDock={setDock} />
 
-      <header className="topbar">
-        <span className="brand">⚡ Windash</span>
-        <span className="sub">personal windows dashboard</span>
-      </header>
-
       {error && <div className="error">⚠ {error}</div>}
 
-      <Gauge label="CPU" value={metrics?.cpu_percent ?? 0} unit="%" />
-      <MemBar
-        usedMb={metrics?.memory_used_mb ?? 0}
-        totalMb={metrics?.memory_total_mb ?? 0}
-        pct={metrics?.memory_percent ?? 0}
-      />
-      <NetSpark rx={metrics?.network_rx_bytes ?? 0} tx={metrics?.network_tx_bytes ?? 0} stream={stream} />
-      <QuickActions onOpen={openUrl} />
+      <div className="hero">
+        <Gauge
+          label="CPU"
+          value={metrics?.cpu_percent ?? 0}
+          sub={metrics ? `${metrics.cpu_cores} cores` : undefined}
+        />
+        <MemBar
+          usedMb={metrics?.memory_used_mb ?? 0}
+          totalMb={metrics?.memory_total_mb ?? 0}
+          pct={metrics?.memory_percent ?? 0}
+        />
+      </div>
 
-      {metrics?.top_processes && metrics.top_processes.length > 0 && (
-        <section className="card">
-          <h3>Top processes</h3>
-          <ul className="procs">
-            {metrics.top_processes.map((p: ProcInfo) => (
-              <li key={p.pid}>
-                <span className="pname">{p.name}</span>
-                <span className="pmeta">{p.cpu.toFixed(1)}% · {(p.mem / 1024 / 1024).toFixed(0)} MB</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <NetSpark
+        rx={metrics?.network_rx_bytes ?? 0}
+        tx={metrics?.network_tx_bytes ?? 0}
+        stream={stream}
+      />
+
+      <DiskList disks={metrics?.disk_infos ?? []} />
+
+      <ProcList procs={metrics?.top_processes ?? []} />
+
+      <QuickActions onOpen={openUrl} />
 
       <NotesStrip
         notes={notes}
@@ -125,8 +135,20 @@ export default function App() {
         onDelete={delNote}
       />
 
+      {metrics && (
+        <div className="sysinfo">
+          <span>{metrics.os_name || "Windows"}</span>
+          <span>·</span>
+          <span>{metrics.process_count} processes</span>
+          <span>·</span>
+          <span>up {fmtUptime(metrics.uptime_seconds)}</span>
+        </div>
+      )}
+
       <footer className="foot">
-        {metrics ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}` : "loading…"}
+        {metrics
+          ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}`
+          : "loading…"}
       </footer>
     </div>
   );

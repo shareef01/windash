@@ -5,18 +5,30 @@ interface Props {
 }
 
 export function MemBar({ usedMb, totalMb, pct }: Props) {
-  const v = Math.max(0, Math.min(100, pct));
+  const usedGb = (usedMb / 1024).toFixed(1);
+  const totalGb = (totalMb / 1024).toFixed(1);
+  const color =
+    pct >= 85 ? "var(--danger)" : pct >= 60 ? "var(--warn)" : "var(--accent)";
+
   return (
-    <section className="card">
-      <div className="row-between">
-        <h3>Memory</h3>
-        <span className="meta">
-          {(usedMb / 1024).toFixed(1)} / {(totalMb / 1024).toFixed(1)} GB
+    <div className="bar-card">
+      <div className="bar-top">
+        <span className="bar-label">Memory</span>
+        <span className="bar-readout">
+          {usedGb}
+          <span className="bar-dim"> / {totalGb} GB</span>
         </span>
       </div>
       <div className="track">
-        <div className="fill" style={{ width: `${v}%`, background: "#60a5fa" }} />
+        <div
+          className="fill"
+          style={{
+            width: `${Math.max(0, Math.min(100, pct))}%`,
+            background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+          }}
+        />
       </div>
-    </section>
+      <div className="bar-foot">{pct.toFixed(0)}% utilized</div>
+    </div>
   );
 }

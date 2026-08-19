@@ -1,162 +1,369 @@
 :root {
-  --bg: #11111b;
-  --card: #1e1e2e;
-  --panel: #313244;
-  --fg: #cdd6f4;
-  --muted: #9399b2;
+  --bg: #0b0b14;
+  --bg2: #14142a;
+  --card: rgba(30, 30, 50, 0.55);
+  --card-solid: #1a1a2e;
+  --panel: #2a2a44;
+  --fg: #e6e9f5;
+  --muted: #8b90b5;
   --accent: #2dd4bf;
-  font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --accent2: #7c8cff;
+  --warn: #fbbf24;
+  --danger: #fb7185;
+  --border: rgba(255, 255, 255, 0.07);
+  --radius: 16px;
+  font-family: "Segoe UI", -apple-system, system-ui, Roboto, sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
-  background: var(--bg);
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(124, 140, 255, 0.12), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(45, 212, 191, 0.1), transparent 55%),
+    var(--bg);
   color: var(--fg);
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 520px;
-  margin: 0 auto;
+  gap: 14px;
+  width: 100%;
+  max-width: 100%;
 }
 
-.topbar {
+/* ---------- Dock bar ---------- */
+.dockbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  user-select: none;
+}
+.dockbar .grip {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.dockbar .dock-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.dock-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.dockbtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 30px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.dockbtn:hover {
+  background: rgba(124, 140, 255, 0.25);
+}
+.dockbtn:active {
+  transform: translateY(1px);
+}
+
+/* ---------- Hero (ring + memory) ---------- */
+.hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+}
+.ring-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.ring-wrap {
+  position: relative;
+  width: 132px;
+  height: 132px;
+}
+.ring-svg {
+  display: block;
+}
+.ring-center {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 4px 2px;
+  justify-content: center;
+  gap: 2px;
 }
-
-.brand {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
+.ring-val {
+  font-size: 34px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
-
-.sub {
-  font-size: 12px;
+.ring-unit {
+  font-size: 15px;
+  color: var(--muted);
+}
+.ring-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ring-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.ring-sub {
+  font-size: 11px;
   color: var(--muted);
 }
 
+/* ---------- Generic card ---------- */
 .card {
   background: var(--card);
-  border: 1px solid #2a2a3c;
-  border-radius: 12px;
-  padding: 12px 14px;
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
 }
-
 .card h3 {
   margin: 0 0 10px;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.8px;
   color: var(--muted);
+  font-weight: 700;
 }
 
-.row-between {
+/* ---------- Memory ---------- */
+.bar-card {
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bar-top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
 }
-
-.big {
-  font-size: 26px;
+.bar-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.bar-readout {
+  font-size: 20px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-
-.meta {
-  color: var(--muted);
+.bar-dim {
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-weight: 500;
+}
+.bar-foot,
+.net-foot,
+.disk-foot {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .track {
-  height: 8px;
-  background: var(--panel);
+  height: 9px;
+  background: rgba(255, 255, 255, 0.07);
   border-radius: 6px;
   overflow: hidden;
-  margin-top: 8px;
 }
-
 .fill {
   height: 100%;
   border-radius: 6px;
-  transition: width 0.4s ease;
+  transition: width 0.5s ease;
 }
 
+/* ---------- Network ---------- */
+.net-card {
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.net-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.net-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.net-speeds {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.net-dl {
+  color: var(--accent);
+}
+.net-ul {
+  color: var(--accent2);
+}
+.net-svg {
+  display: block;
+}
+
+/* ---------- Disks ---------- */
+.disk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.disk-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+.disk-mp {
+  font-weight: 600;
+}
+.disk-pct {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Processes ---------- */
+.proc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.proc-row {
+  display: grid;
+  grid-template-columns: 1fr 70px 52px 56px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.proc-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proc-bar-wrap {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.proc-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+.proc-cpu {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  font-weight: 600;
+}
+.proc-mem {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* ---------- Quick actions ---------- */
 .actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
-
 .btn {
-  background: var(--panel);
+  background: rgba(124, 140, 255, 0.14);
   color: var(--fg);
-  border: 1px solid #3a3a52;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 14px;
   font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.btn:hover {
-  background: #3a3a52;
-}
-
-.procs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.procs li {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-}
-
-.pname {
   font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.btn:hover {
+  background: rgba(124, 140, 255, 0.28);
+}
+.btn:active {
+  transform: translateY(1px);
 }
 
-.pmeta {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
+/* ---------- Notes ---------- */
 .note-input {
   display: flex;
   gap: 8px;
   margin-bottom: 10px;
 }
-
 .note-input input {
   flex: 1;
-  background: var(--panel);
-  border: 1px solid #3a3a52;
-  border-radius: 8px;
-  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
   color: var(--fg);
   font-size: 13px;
 }
-
 .note-input input:focus {
   outline: 1px solid var(--accent);
 }
-
 .notes {
   list-style: none;
   margin: 0;
@@ -164,20 +371,19 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 150px;
+  max-height: 160px;
   overflow-y: auto;
 }
-
 .notes li {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--panel);
-  border-radius: 8px;
-  padding: 6px 10px;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 8px 12px;
   font-size: 13px;
 }
-
 .x {
   background: transparent;
   border: none;
@@ -186,76 +392,37 @@ body {
   font-size: 16px;
   line-height: 1;
 }
-
 .x:hover {
-  color: #f87171;
+  color: var(--danger);
 }
 
+/* ---------- System info pill row ---------- */
+.sysinfo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+}
+
+/* ---------- Misc ---------- */
 .error {
-  background: #3a1d1d;
+  background: rgba(251, 113, 133, 0.12);
   color: #fca5a5;
-  border: 1px solid #5a2a2a;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid rgba(251, 113, 133, 0.35);
+  border-radius: 10px;
+  padding: 9px 12px;
   font-size: 13px;
 }
-
-.dockbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--panel);
-  border: 1px solid #3a3a52;
-  border-radius: 8px;
-  padding: 6px 10px;
-  user-select: none;
-}
-
-.dockbar .grip {
-  cursor: grab;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1;
-}
-
-.dockbar .dock-label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--accent);
-}
-
-.dock-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 6px;
-}
-
-.dockbtn {
-  background: #262637;
-  color: var(--fg);
-  border: 1px solid #3a3a52;
-  border-radius: 6px;
-  width: 28px;
-  height: 26px;
-  cursor: pointer;
-  font-size: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dockbtn:hover {
-  background: #3a3a52;
-}
-
-.dockbtn:active {
-  transform: translateY(1px);
-}
-
 .foot {
   text-align: center;
   color: var(--muted);
   font-size: 11px;
-  padding-top: 4px;
+  padding-top: 2px;
 }

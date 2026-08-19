@@ -22,6 +22,7 @@ export interface ProcInfo {
 export interface MetricsSnapshot {
   timestamp: string;
   cpu_percent: number;
+  cpu_cores: number;
   memory_total_mb: number;
   memory_used_mb: number;
   memory_percent: number;
@@ -29,6 +30,8 @@ export interface MetricsSnapshot {
   network_rx_bytes: number;
   network_tx_bytes: number;
   process_count: number;
+  uptime_seconds: number;
+  os_name: string;
   top_processes: ProcInfo[];
 }
 

@@ -52,8 +52,16 @@ impl NotesStore {
 
     fn load(&self) -> Result<NotesData, String> {
         let text = fs::read_to_string(&self.path).map_err(|e| format!("read: {}", e))?;
-        let data: NotesData = serde_json::from_str(&text).map_err(|e| format!("parse: {}", e))?;
-        Ok(data)
+        match serde_json::from_str::<NotesData>(&text) {
+            Ok(data) => Ok(data),
+            Err(_) => {
+                // Corrupt notes file: repair with an empty store rather than fail.
+                log::warn!("notes file corrupted, repairing: {}", self.path.display());
+                let data = NotesData::default();
+                let _ = self.save(&data);
+                Ok(data)
+            }
+        }
     }
 
     fn save(&self, data: &NotesData) -> Result<(), String> {

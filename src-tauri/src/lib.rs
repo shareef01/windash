@@ -144,6 +144,15 @@ pub fn run() {
                     use tauri::{LogicalPosition, LogicalSize};
                     let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
                     let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
+                    // Tell the frontend the actual window width so the responsive
+                    // layout mode matches the restored geometry.
+                    let _ = window.emit(
+                        "windash://resized",
+                        serde_json::json!({
+                            "width": g.width as f64,
+                            "height": g.height as f64,
+                        }),
+                    );
                 }
             }
 
@@ -164,7 +173,6 @@ pub fn run() {
             open_explorer,
             windows_search,
             end_process,
-            process_path,
             get_settings,
             update_settings,
             set_always_on_top,
@@ -357,15 +365,6 @@ fn end_process(pid: u64) -> Result<(), String> {
     }
 }
 
-/// Return the directory containing a process' executable (for "open file
-/// location"). Resolves the path through sysinfo.
-#[tauri::command]
-fn process_path(pid: u64) -> Result<String, String> {
-    let sys = SystemMetrics::new();
-    sys.exe_dir_for_pid(pid)
-        .ok_or_else(|| "Process path unavailable.".into())
-}
-
 #[tauri::command]
 fn get_settings(out: tauri::State<'_, AppState>) -> Result<settings::Settings, String> {
     Ok(out.settings.lock().map_err(|e| e.to_string())?.get())
@@ -427,16 +426,15 @@ fn get_system_theme() -> String {
             .output();
         if let Ok(o) = out {
             let text = String::from_utf8_lossy(&o.stdout);
-            // AppsUseLightTheme: 0x1 = light apps, 0x0 = dark apps.
+            // Value looks like:  ...    0x1\n
+            // Parse the hex value after "0x" robustly.
             if let Some(idx) = text.find("0x") {
-                let hex = &text[idx..];
-                if hex.starts_with("0x1") {
-                    return "light".to_string();
-                } else if hex.starts_with("0x0") {
-                    return "dark".to_string();
+                if let Ok(val) = u32::from_str_radix(text[idx + 2..].trim().split_whitespace().next().unwrap_or("0"), 16) {
+                    return if val == 0 { "dark".to_string() } else { "light".to_string() };
                 }
             }
         }
+        // Default to dark if the registry read fails for any reason.
         "dark".to_string()
     }
     #[cfg(not(target_os = "windows"))]
@@ -473,6 +471,19 @@ fn set_dock(
     store.set(&cfg)?;
     drop(store);
     dock::apply_dock(&window, &cfg)?;
+
+    // When un-docking, restore the saved floating geometry (size + position)
+    // so the window doesn't stay a full-height sidebar shape.
+    if cfg.edge() == dock::DockEdge::None {
+        let g = out.geom.lock().unwrap().get();
+        use tauri::{LogicalPosition, LogicalSize};
+        let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
+        let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
+        let _ = window.emit(
+            "windash://resized",
+            serde_json::json!({ "width": g.width as f64, "height": g.height as f64 }),
+        );
+    }
     Ok(cfg)
 }
 

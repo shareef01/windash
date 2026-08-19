@@ -17,16 +17,16 @@ export function DockBar({ dock, onDock, onSettings }: Props) {
         <span>Windash</span>
       </div>
       <span className="dock-controls">
-        <button className="iconbtn" onClick={() => onDock("left")} title="Dock left">
+        <button className="iconbtn" onClick={() => onDock("left")} title="Dock left" aria-label="Dock left">
           ◧
         </button>
-        <button className="iconbtn" onClick={() => onDock("right")} title="Dock right">
+        <button className="iconbtn" onClick={() => onDock("right")} title="Dock right" aria-label="Dock right">
           ◨
         </button>
-        <button className="iconbtn" onClick={() => onDock("none")} title="Float">
+        <button className="iconbtn" onClick={() => onDock("none")} title="Float" aria-label="Float window">
           ▢
         </button>
-        <button className="iconbtn" onClick={onSettings} title="Settings">
+        <button className="iconbtn" onClick={onSettings} title="Settings" aria-label="Settings">
           ⚙
         </button>
         <span className="sep" />
@@ -34,6 +34,7 @@ export function DockBar({ dock, onDock, onSettings }: Props) {
           className="iconbtn"
           onClick={() => invoke("window_minimize")}
           title="Minimize"
+          aria-label="Minimize"
         >
           &#8211;
         </button>
@@ -41,6 +42,7 @@ export function DockBar({ dock, onDock, onSettings }: Props) {
           className="iconbtn iconbtn-close"
           onClick={() => invoke("window_hide")}
           title="Close to tray"
+          aria-label="Close to tray"
         >
           &#10005;
         </button>

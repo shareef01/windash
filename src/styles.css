@@ -256,7 +256,7 @@ body {
 }
 .proc-row {
   display: grid;
-  grid-template-columns: 1fr 56px 46px 52px;
+  grid-template-columns: 1fr 52px 46px;
   align-items: center;
   gap: 8px;
   font-size: 11px;
@@ -519,7 +519,7 @@ body {
 }
 .proc-head {
   display: grid;
-  grid-template-columns: 1fr 56px 52px;
+  grid-template-columns: 1fr 52px 46px;
   gap: 8px;
   font-size: 9px;
   font-weight: 600;
@@ -577,6 +577,47 @@ body {
 /* expanded: more breathing room, larger network chart headroom. */
 .layout-expanded .section {
   padding: 14px 0;
+}
+
+/* ---------- Context menu (process right-click) ---------- */
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+.ctx-menu {
+  z-index: 51;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctx-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ctx-item:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.ctx-item:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.ctx-danger:hover:not(:disabled) {
+  background: rgba(242, 118, 143, 0.16);
+  color: var(--red);
 }
 
 /* ---------- Light theme (system/dark/light toggle) ---------- */

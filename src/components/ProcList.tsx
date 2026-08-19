@@ -1,6 +1,7 @@
 import type { ProcInfo } from "../types";
 import { cpuColor, fmtSize } from "../theme";
 import { invoke } from "@tauri-apps/api/core";
+import { useState } from "react";
 
 interface Props {
   procs: ProcInfo[];
@@ -10,7 +11,15 @@ interface Props {
   onSelect: (pid: number | null) => void;
 }
 
+interface MenuState {
+  pid: number;
+  x: number;
+  y: number;
+}
+
 export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Props) {
+  const [menu, setMenu] = useState<MenuState | null>(null);
+
   if (!procs || procs.length === 0) {
     return <div className="empty">No processes.</div>;
   }
@@ -21,7 +30,11 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
     return b.cpu - a.cpu;
   });
 
-  async function openLocation(p: ProcInfo) {
+  const byPid = (pid: number) => sorted.find((p) => p.pid === pid);
+
+  async function openLocation(p: ProcInfo | undefined) {
+    if (!p) return;
+    setMenu(null);
     try {
       await invoke("open_explorer", { pid: p.pid });
     } catch (e) {
@@ -29,7 +42,9 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
     }
   }
 
-  async function endTask(p: ProcInfo) {
+  async function endTask(p: ProcInfo | undefined) {
+    setMenu(null);
+    if (!p) return;
     if (!confirm(`End "${p.name}" (PID ${p.pid})? This cannot be undone.`)) return;
     try {
       await invoke("end_process", { pid: p.pid });
@@ -69,12 +84,8 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
           onClick={() => onSelect(selectedPid === p.pid ? null : p.pid)}
           onContextMenu={(e) => {
             e.preventDefault();
-            const choice = window.prompt(
-              `Process: ${p.name} (PID ${p.pid})\n\nChoose an action:\n1 = Open file location${p.exe ? "" : " (unavailable)"}\n2 = End task`,
-              p.exe ? "1" : "2"
-            );
-            if (choice === "1" && p.exe) openLocation(p);
-            else if (choice === "2") endTask(p);
+            onSelect(p.pid);
+            setMenu({ pid: p.pid, x: e.clientX, y: e.clientY });
           }}
         >
           <span className="proc-name" title={p.exe || p.name}>
@@ -90,6 +101,33 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
           <span className="num proc-mem">{fmtSize(p.mem)}</span>
         </div>
       ))}
+
+      {menu && (
+        <>
+          <div className="ctx-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
+          <div
+            className="ctx-menu"
+            style={{ position: "fixed", left: menu.x, top: menu.y }}
+            role="menu"
+          >
+            <button
+              className="ctx-item"
+              role="menuitem"
+              disabled={!byPid(menu.pid)?.exe}
+              onClick={() => openLocation(byPid(menu.pid))}
+            >
+              Open file location
+            </button>
+            <button
+              className="ctx-item ctx-danger"
+              role="menuitem"
+              onClick={() => endTask(byPid(menu.pid))}
+            >
+              End task
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

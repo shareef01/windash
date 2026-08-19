@@ -112,7 +112,7 @@ export default function App() {
     };
   }, []);
 
-  // React to native window events emitted from Rust (resize / auto-dock).
+  // React to native window events emitted from Rust (resize / auto-dock / focus).
   useEffect(() => {
     let unlisten: Array<() => void> = [];
     listen<{ width: number; height: number }>("windash://resized", (e) => {
@@ -122,6 +122,11 @@ export default function App() {
       setDockState((prev) =>
         prev ? { ...prev, edge: e.payload as DockConfig["edge"] } : prev
       );
+    }).then((u) => unlisten.push(u));
+    // Re-read the OS theme when the window is focused (keeps "Follow Windows"
+    // in sync without a polling timer that would flash consoles).
+    listen("windash://focused", () => {
+      if (settings?.theme === "system") loadSystemTheme();
     }).then((u) => unlisten.push(u));
     return () => unlisten.forEach((u) => u());
   }, []);
@@ -135,13 +140,13 @@ export default function App() {
     };
   }, [settings?.refresh_ms]);
 
-  // When the theme follows Windows, poll the OS theme so switching the OS
-  // light/dark mode updates Windash live (no restart needed).
+  // When the theme follows Windows, re-read the OS theme when the window is
+  // (re)focused so switching the OS light/dark mode updates Windash — but we
+  // do NOT poll on an interval (that would spawn a console `reg` query every
+  // few seconds and flash empty terminals). Instead we listen for focus.
   useEffect(() => {
     if (settings?.theme !== "system") return;
     loadSystemTheme();
-    const id = window.setInterval(loadSystemTheme, 3000);
-    return () => window.clearInterval(id);
   }, [settings?.theme]);
 
   async function addNote() {

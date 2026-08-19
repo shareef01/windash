@@ -15,6 +15,8 @@ to learn **Rust** while keeping a fast **React** UI.
 - **Top processes** by CPU
 - **Quick actions** — open GitHub, file explorer, web search
 - **Notes strip** — add/delete notes, persisted across restarts
+- **Dockable window** — docks to the left/right screen edge as an always-on-top
+  sidebar (or floats freely); state persists in AppData
 - **System tray** — left-click to toggle, menu to show / hide / quit
 
 ## Getting started

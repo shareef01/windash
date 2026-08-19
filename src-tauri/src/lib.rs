@@ -4,9 +4,11 @@
 
 mod metrics;
 mod notes;
+mod dock;
 
 use metrics::SystemMetrics;
 use notes::NotesStore;
+use dock::DockStore;
 use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
@@ -18,6 +20,7 @@ use tauri::{
 struct AppState {
     metrics: Mutex<SystemMetrics>,
     notes: Mutex<NotesStore>,
+    dock: Mutex<DockStore>,
 }
 
 pub fn run() {
@@ -28,11 +31,20 @@ pub fn run() {
         .setup(|app| {
             let metrics = SystemMetrics::new();
             let notes = NotesStore::new(app.handle())?;
+            let dock_store = DockStore::new(app.handle())?;
             let state = AppState {
                 metrics: Mutex::new(metrics),
                 notes: Mutex::new(notes),
+                dock: Mutex::new(dock_store),
             };
             app.manage(state);
+
+            // Apply saved dock position to the main window once it exists.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let cfg = app.state::<AppState>().dock.lock().unwrap().get();
+                let _ = dock::apply_dock(&window, &cfg);
+            }
 
             // System tray
             let quit_item = MenuItem::with_id(app, "quit", "Quit Windash", true, None::<&str>)?;
@@ -94,6 +106,8 @@ pub fn run() {
             add_note,
             delete_note,
             launch_app,
+            get_dock,
+            set_dock,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -130,4 +144,24 @@ async fn launch_app(app: AppHandle, target: String) -> Result<(), String> {
     app.opener()
         .open_url(target, None::<&str>)
         .map_err(|e| format!("open url: {}", e))
+}
+
+#[tauri::command]
+fn get_dock(out: tauri::State<'_, AppState>) -> Result<dock::DockConfig, String> {
+    Ok(out.dock.lock().map_err(|e| e.to_string())?.get())
+}
+
+#[tauri::command]
+fn set_dock(
+    edge: String,
+    out: tauri::State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<dock::DockConfig, String> {
+    let store = out.dock.lock().map_err(|e| e.to_string())?;
+    let mut cfg = store.get();
+    cfg.edge = edge;
+    store.set(&cfg)?;
+    drop(store);
+    dock::apply_dock(&window, &cfg)?;
+    Ok(cfg)
 }

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { MetricsSnapshot, Note, ProcInfo } from "./types";
-import { Gauge, MemBar, NetSpark, NotesStrip, QuickActions } from "./components";
+import type { MetricsSnapshot, Note, ProcInfo, DockConfig } from "./types";
+import { Gauge, MemBar, NetSpark, NotesStrip, QuickActions, DockBar } from "./components";
 
 export default function App() {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [stream, setStream] = useState<number[]>([]);
   const [noteText, setNoteText] = useState("");
+  const [dock, setDockState] = useState<DockConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
 
@@ -31,9 +32,30 @@ export default function App() {
     }
   }
 
+  async function loadDock() {
+    try {
+      const cfg = await invoke<DockConfig>("get_dock");
+      setDockState(cfg);
+      // Re-apply the saved dock now that the window is fully created/visible,
+      // so monitor geometry is available and the position actually takes effect.
+      await invoke<DockConfig>("set_dock", { edge: cfg.edge });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function setDock(edge: "none" | "left" | "right") {
+    try {
+      setDockState(await invoke<DockConfig>("set_dock", { edge }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   useEffect(() => {
     refresh();
     loadNotes();
+    loadDock();
     timer.current = window.setInterval(refresh, 2000);
     return () => {
       if (timer.current) window.clearInterval(timer.current);
@@ -63,6 +85,8 @@ export default function App() {
 
   return (
     <div className="app">
+      <DockBar dock={dock} onDock={setDock} />
+
       <header className="topbar">
         <span className="brand">⚡ Windash</span>
         <span className="sub">personal windows dashboard</span>

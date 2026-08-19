@@ -54,11 +54,16 @@ impl GeomStore {
         fs::read_to_string(&self.path)
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or(WindowGeom {
-                x: 200,
-                y: 100,
-                width: 390,
-                height: 720,
+            .unwrap_or_else(|| {
+                // Repair / first-run default.
+                let g = WindowGeom {
+                    x: 200,
+                    y: 100,
+                    width: 390,
+                    height: 720,
+                };
+                let _ = self.set(&g);
+                g
             })
     }
 

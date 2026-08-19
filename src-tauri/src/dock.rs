@@ -70,7 +70,19 @@ impl DockStore {
 
     fn load(&self) -> Result<DockConfig, String> {
         let text = fs::read_to_string(&self.path).map_err(|e| format!("read: {}", e))?;
-        serde_json::from_str(&text).map_err(|e| format!("parse: {}", e))
+        match serde_json::from_str::<DockConfig>(&text) {
+            Ok(cfg) => Ok(cfg),
+            Err(_) => {
+                log::warn!("dock file corrupted, repairing: {}", self.path.display());
+                let cfg = DockConfig {
+                    edge: "right".to_string(),
+                    width: 390,
+                    always_on_top: true,
+                };
+                let _ = self.save(&cfg);
+                Ok(cfg)
+            }
+        }
     }
 
     fn save(&self, cfg: &DockConfig) -> Result<(), String> {

@@ -55,8 +55,7 @@ impl SystemMetrics {
     /// "open file location" action. Returns None if the process isn't found or
     /// has no usable path.
     pub fn exe_dir_for_pid(&self, pid: u64) -> Option<String> {
-        let sys = System::new_all();
-        for (p, process) in sys.processes() {
+        for (p, process) in self.system.processes() {
             if p.as_u32() as u64 == pid {
                 if let Some(exe) = process.exe() {
                     if let Some(parent) = exe.parent() {

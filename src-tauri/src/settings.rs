@@ -65,7 +65,23 @@ impl SettingsStore {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
         }
+        // If the file is missing, write defaults. If it exists but is corrupt,
+        // repair it (overwrite with defaults) rather than crashing at startup.
         if !self.path.exists() {
+            let data = SettingsData {
+                settings: Settings::default(),
+            };
+            fs::write(&self.path, serde_json::to_string_pretty(&data).unwrap())
+                .map_err(|e| format!("write: {}", e))?;
+        } else if fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<SettingsData>(&t).ok())
+            .is_none()
+        {
+            log::warn!(
+                "settings file corrupted, repairing: {}",
+                self.path.display()
+            );
             let data = SettingsData {
                 settings: Settings::default(),
             };

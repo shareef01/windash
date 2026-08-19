@@ -38,7 +38,7 @@ export default function App() {
 
   // Derive a responsive layout mode from the current window width.
   const layout: "compact" | "normal" | "expanded" =
-    width < 320 ? "compact" : width > 480 ? "expanded" : "normal";
+    width < 340 ? "compact" : width > 520 ? "expanded" : "normal";
 
   // Effective theme: "system" follows the OS; otherwise use the explicit choice.
   const effectiveTheme: "dark" | "light" =
@@ -134,6 +134,15 @@ export default function App() {
       if (timer.current) window.clearInterval(timer.current);
     };
   }, [settings?.refresh_ms]);
+
+  // When the theme follows Windows, poll the OS theme so switching the OS
+  // light/dark mode updates Windash live (no restart needed).
+  useEffect(() => {
+    if (settings?.theme !== "system") return;
+    loadSystemTheme();
+    const id = window.setInterval(loadSystemTheme, 3000);
+    return () => window.clearInterval(id);
+  }, [settings?.theme]);
 
   async function addNote() {
     const t = noteText.trim();

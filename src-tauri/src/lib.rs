@@ -133,6 +133,7 @@ pub fn run() {
             get_settings,
             update_settings,
             set_always_on_top,
+            get_system_theme,
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_pos) => {
@@ -349,6 +350,39 @@ fn set_always_on_top(value: bool, out: tauri::State<'_, AppState>) -> Result<(),
         })
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn get_system_theme() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let out = Command::new("reg")
+            .args([
+                "query",
+                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                "/v",
+                "AppsUseLightTheme",
+            ])
+            .output();
+        if let Ok(o) = out {
+            let text = String::from_utf8_lossy(&o.stdout);
+            // AppsUseLightTheme: 0x1 = light apps, 0x0 = dark apps.
+            if let Some(idx) = text.find("0x") {
+                let hex = &text[idx..];
+                if hex.starts_with("0x1") {
+                    return "light".to_string();
+                } else if hex.starts_with("0x0") {
+                    return "dark".to_string();
+                }
+            }
+        }
+        "dark".to_string()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "dark".to_string()
+    }
 }
 
 /// Remove native window chrome and apply a frosted-glass blur. Must run after

@@ -564,3 +564,20 @@ body {
   padding: 14px 0;
 }
 
+/* ---------- Light theme (system/dark/light toggle) ---------- */
+[data-theme="light"] {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #f0f1f5;
+  --line: #e1e3ea;
+  --fg: #1c1e26;
+  --muted: #5c6273;
+  --faint: #9aa0b0;
+  --accent: #3b5bdb;
+  --accent-soft: rgba(59, 91, 219, 0.12);
+  --green: #1f9d57;
+  --red: #d23b54;
+  --amber: #c47f12;
+}
+
+

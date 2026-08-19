@@ -1,0 +1,31 @@
+[package]
+name = "windash"
+version = "0.1.0"
+description = "Personal Windows system dashboard — system stats, quick actions, notes strip."
+authors = ["shareef01"]
+edition = "2018"
+license = "MIT"
+repository = "https://github.com/shareef01/windash"
+
+[lib]
+name = "windash_lib"
+crate-type = ["lib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = { version = "0.32", default-features = false, features = ["system", "network", "disk", "user", "multithread"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.11"
+dirs = "6"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "z"

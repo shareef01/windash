@@ -1,0 +1,19 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+dist
+dist-ssr
+
+# Rust / Tauri
+/src-tauri/target
+/src-tauri/gen
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+*.local

@@ -96,11 +96,12 @@ impl SystemMetrics {
                 .partial_cmp(&a.cpu)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        procs.truncate(5);
+        procs.truncate(8);
 
         Ok(MetricsSnapshot {
             timestamp: chrono::Utc::now().to_rfc3339(),
             cpu_percent: cpu_pct,
+            cpu_cores: cpus.len(),
             memory_total_mb: total_mem / (1024 * 1024),
             memory_used_mb: used_mem / (1024 * 1024),
             memory_percent: mem_pct,
@@ -108,6 +109,8 @@ impl SystemMetrics {
             network_rx_bytes: rx_delta,
             network_tx_bytes: tx_delta,
             process_count,
+            uptime_seconds: System::uptime(),
+            os_name: System::name().unwrap_or_default(),
             top_processes: procs,
         })
     }
@@ -117,6 +120,7 @@ impl SystemMetrics {
 pub struct MetricsSnapshot {
     pub timestamp: String,
     pub cpu_percent: f32,
+    pub cpu_cores: usize,
     pub memory_total_mb: u64,
     pub memory_used_mb: u64,
     pub memory_percent: f64,
@@ -124,6 +128,8 @@ pub struct MetricsSnapshot {
     pub network_rx_bytes: u64,
     pub network_tx_bytes: u64,
     pub process_count: usize,
+    pub uptime_seconds: u64,
+    pub os_name: String,
     pub top_processes: Vec<ProcInfo>,
 }
 

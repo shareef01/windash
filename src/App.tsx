@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { MetricsSnapshot, Note, DockConfig } from "./types";
+import type { MetricsSnapshot, Note, DockConfig, Settings, SortKey } from "./types";
 import {
   Gauge,
   MemBar,
@@ -11,6 +11,7 @@ import {
   DockBar,
   DiskList,
   ProcList,
+  SettingsPanel,
 } from "./components";
 
 function fmtUptime(s: number): string {
@@ -25,6 +26,10 @@ export default function App() {
   const [stream, setStream] = useState<number[]>([]);
   const [noteText, setNoteText] = useState("");
   const [dock, setDockState] = useState<DockConfig | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("cpu");
+  const [selectedPid, setSelectedPid] = useState<number | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
 
@@ -32,8 +37,6 @@ export default function App() {
     try {
       const m = await invoke<MetricsSnapshot>("get_metrics");
       setMetrics(m);
-      // Chart history now reflects download rate (rx), which is the value the
-      // user scans first; upload is shown as a secondary label.
       setStream((s) => [...s.slice(-59), m.network_rx_bytes]);
       setError(null);
     } catch (e) {
@@ -49,11 +52,18 @@ export default function App() {
     }
   }
 
+  async function loadSettings() {
+    try {
+      setSettings(await invoke<Settings>("get_settings"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function loadDock() {
     try {
       const cfg = await invoke<DockConfig>("get_dock");
       setDockState(cfg);
-      // Apply window chrome (borderless + acrylic) now that the window is ready.
       await invoke("apply_immersive");
       await invoke<DockConfig>("set_dock", { edge: cfg.edge });
     } catch (e) {
@@ -72,12 +82,22 @@ export default function App() {
   useEffect(() => {
     refresh();
     loadNotes();
+    loadSettings();
     loadDock();
-    timer.current = window.setInterval(refresh, 2000);
+    timer.current = window.setInterval(refresh, settings?.refresh_ms ?? 2000);
     return () => {
       if (timer.current) window.clearInterval(timer.current);
     };
   }, []);
+
+  // Re-arm the interval when the refresh setting changes.
+  useEffect(() => {
+    if (timer.current) window.clearInterval(timer.current);
+    timer.current = window.setInterval(refresh, settings?.refresh_ms ?? 2000);
+    return () => {
+      if (timer.current) window.clearInterval(timer.current);
+    };
+  }, [settings?.refresh_ms]);
 
   async function addNote() {
     const t = noteText.trim();
@@ -102,7 +122,15 @@ export default function App() {
 
   return (
     <div className="app">
-      <DockBar dock={dock} onDock={setDock} />
+      <DockBar
+        dock={dock}
+        onDock={setDock}
+        onSettings={() => setShowSettings((v) => !v)}
+      />
+
+      {showSettings && settings && (
+        <SettingsPanel settings={settings} onClose={() => setShowSettings(false)} />
+      )}
 
       {error && <div className="error">⚠ {error}</div>}
 
@@ -125,19 +153,31 @@ export default function App() {
         stream={stream}
       />
 
-      <DiskList disks={metrics?.disk_infos ?? []} />
+      {settings?.show_disks !== false && (
+        <DiskList disks={metrics?.disk_infos ?? []} />
+      )}
 
-      <ProcList procs={metrics?.top_processes ?? []} />
+      {settings?.show_processes !== false && (
+        <ProcList
+          procs={metrics?.top_processes ?? []}
+          sortKey={sortKey}
+          onSort={setSortKey}
+          selectedPid={selectedPid}
+          onSelect={setSelectedPid}
+        />
+      )}
 
-      <QuickActions onOpen={openUrl} />
+      {settings?.show_actions !== false && <QuickActions onOpen={openUrl} />}
 
-      <NotesStrip
-        notes={notes}
-        text={noteText}
-        onText={setNoteText}
-        onAdd={addNote}
-        onDelete={delNote}
-      />
+      {settings?.show_notes !== false && (
+        <NotesStrip
+          notes={notes}
+          text={noteText}
+          onText={setNoteText}
+          onAdd={addNote}
+          onDelete={delNote}
+        />
+      )}
 
       <div className="statusbar">
         <span className="status-dot" />

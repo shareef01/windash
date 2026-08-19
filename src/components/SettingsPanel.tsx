@@ -93,6 +93,10 @@ export function SettingsPanel({ settings, onClose }: Props) {
           Quick actions
         </label>
       </div>
+
+      <div className="popover-foot">
+        Toggle window: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>
+      </div>
     </div>
   );
 }

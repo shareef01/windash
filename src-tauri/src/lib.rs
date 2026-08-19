@@ -19,6 +19,7 @@ use tauri::{
     AppHandle, Emitter, Manager,
     image::Image,
 };
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 struct AppState {
     metrics: Mutex<SystemMetrics>,
@@ -32,6 +33,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let metrics = SystemMetrics::new();
             let notes = NotesStore::new(app.handle())?;
@@ -44,6 +46,30 @@ pub fn run() {
                 settings: Mutex::new(settings),
             };
             app.manage(state);
+
+            // Global show/hide shortcut: Ctrl+Shift+D toggles the window.
+            // Registered from Rust so it works even when the window is hidden
+            // (the frontend cannot listen while hidden).
+            if let Err(e) = app.global_shortcut().on_shortcut(
+                "CmdOrCtrl+Shift+D",
+                |app, _shortcut, event| {
+                    // Only act on key press, not release (avoids double-toggle).
+                    if event.state != tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        return;
+                    }
+                    if let Some(window) = app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.unminimize();
+                        }
+                    }
+                },
+            ) {
+                log::error!("failed to register global shortcut: {e}");
+            }
 
             // Apply saved dock + always-on-top to the main window once it exists.
             if let Some(window) = app.get_webview_window("main") {

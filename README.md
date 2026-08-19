@@ -16,7 +16,16 @@ to learn **Rust** while keeping a fast **React** UI.
 - **Quick actions** — open GitHub, file explorer, web search
 - **Notes strip** — add/delete notes, persisted across restarts
 - **Dockable window** — docks to the left/right screen edge as an always-on-top
-  sidebar (or floats freely); state persists in AppData
+  sidebar (or floats freely); drag a floating window near a screen edge to
+  snap-dock it. State persists in AppData.
+- **Global show/hide shortcut** — `Ctrl+Shift+D` toggles the window from
+  anywhere (works even when hidden, via `tauri-plugin-global-shortcut`).
+- **Responsive layout** — compact / normal / expanded modes adapt to the
+  window width.
+- **Theme** — follows Windows (dark/light) or forces either; surfaces update
+  live via CSS variables.
+- **Settings** — always-on-top, refresh interval, theme, and per-section
+  visibility, all persisted as JSON in AppData.
 - **System tray** — left-click to toggle, menu to show / hide / quit
 
 ## Getting started
@@ -52,9 +61,12 @@ windash/
 │   ├── types.ts         # shared TS types mirroring the Rust commands
 │   └── styles.css       # dark theme
 └── src-tauri/           # Rust backend (Tauri)
-    ├── src/lib.rs       # commands + tray setup
+    ├── src/lib.rs       # commands + tray + global shortcut + window events
     ├── src/metrics.rs   # sysinfo wrapper
-    └── src/notes.rs     # JSON notes store
+    ├── src/notes.rs     # JSON notes store
+    ├── src/dock.rs      # docking + edge detection
+    ├── src/settings.rs  # persisted settings
+    └── capabilities/     # permission sets (global-shortcut, core)
 ```
 
 ## How it works

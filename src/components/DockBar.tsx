@@ -7,22 +7,21 @@ interface Props {
 
 export function DockBar({ dock, onDock }: Props) {
   const edge = dock?.edge ?? "right";
+  const dotColor = edge === "none" ? "var(--muted)" : "var(--accent)";
   return (
-    <div className="dockbar" data-edge={edge}>
-      <span className="grip" title="Drag to move · double-click to toggle dock">
-        ⠿
+    <div className="header">
+      <span className="wordmark">
+        <span className="dot" style={{ background: dotColor }} />
+        Windash
       </span>
-      <span className="dock-label">
-        {edge === "none" ? "floating" : `docked ${edge}`}
-      </span>
-      <span className="dock-actions">
-        <button className="dockbtn" onClick={() => onDock("left")} title="Dock left">
+      <span className="dock-controls">
+        <button className="iconbtn" onClick={() => onDock("left")} title="Dock left">
           ◧
         </button>
-        <button className="dockbtn" onClick={() => onDock("right")} title="Dock right">
+        <button className="iconbtn" onClick={() => onDock("right")} title="Dock right">
           ◨
         </button>
-        <button className="dockbtn" onClick={() => onDock("none")} title="Undock (float)">
+        <button className="iconbtn" onClick={() => onDock("none")} title="Float">
           ▢
         </button>
       </span>

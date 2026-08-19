@@ -481,6 +481,21 @@ body {
 .row input[type="checkbox"] {
   accent-color: var(--accent);
 }
+.popover-foot {
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--muted);
+}
+.popover-foot kbd {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-family: inherit;
+  color: var(--fg);
+}
 
 /* ---------- Process sorting + header ---------- */
 .sort {

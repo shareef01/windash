@@ -3,13 +3,16 @@
 // the interval since the last refresh. No manual delta math needed.
 
 use sysinfo::{Disks, Networks, System};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct SystemMetrics {
     system: System,
     networks: Networks,
     disks: Disks,
     last_update: Instant,
+    /// Real wall-clock interval between the two most recent refreshes. Used to
+    /// convert raw network deltas into accurate bytes-per-second rates.
+    interval: Duration,
 }
 
 impl SystemMetrics {
@@ -24,13 +27,28 @@ impl SystemMetrics {
             networks,
             disks,
             last_update: Instant::now(),
+            interval: Duration::from_secs(2),
         }
     }
 
     pub fn refresh(&mut self) {
+        // Capture the real interval BEFORE resetting the timestamp, so the rate
+        // math uses the wall-clock time the previous sample actually covered.
+        self.interval = self.last_update.elapsed();
+        self.last_update = Instant::now();
         self.system.refresh_all();
         self.networks.refresh_list();
-        self.last_update = Instant::now();
+    }
+
+    /// Seconds covered by the most recent refresh interval, clamped to a sane
+    /// range so a stalled timer can't yield divide-by-zero or an absurd rate.
+    pub fn elapsed_secs(&self) -> f64 {
+        let s = self.interval.as_secs_f64();
+        if s <= 0.0 || s > 60.0 {
+            1.0
+        } else {
+            s
+        }
     }
 
     pub fn snapshot(&self) -> Result<MetricsSnapshot, String> {
@@ -68,13 +86,17 @@ impl SystemMetrics {
             .collect();
 
         // Network — received()/transmitted() are deltas since last refresh_list().
-        // We sum across all interfaces for total delta.
+        // We sum across all interfaces for total delta, then divide by the
+        // elapsed refresh interval to get an accurate bytes-per-second rate.
+        let secs = self.elapsed_secs();
         let mut rx_delta: u64 = 0;
         let mut tx_delta: u64 = 0;
         for (_name, net) in self.networks.iter() {
             rx_delta += net.received();
             tx_delta += net.transmitted();
         }
+        let rx_rate = (rx_delta as f64 / secs) as u64;
+        let tx_rate = (tx_delta as f64 / secs) as u64;
 
         // Processes — Process::name() returns &OsStr directly in 0.32.
         let process_count = sys.processes().len();
@@ -106,8 +128,8 @@ impl SystemMetrics {
             memory_used_mb: used_mem / (1024 * 1024),
             memory_percent: mem_pct,
             disk_infos,
-            network_rx_bytes: rx_delta,
-            network_tx_bytes: tx_delta,
+            network_rx_bytes: rx_rate,
+            network_tx_bytes: tx_rate,
             process_count,
             uptime_seconds: System::uptime(),
             os_name: System::name().unwrap_or_default(),

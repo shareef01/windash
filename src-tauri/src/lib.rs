@@ -108,6 +108,7 @@ pub fn run() {
             launch_app,
             get_dock,
             set_dock,
+            apply_immersive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -149,6 +150,25 @@ async fn launch_app(app: AppHandle, target: String) -> Result<(), String> {
 #[tauri::command]
 fn get_dock(out: tauri::State<'_, AppState>) -> Result<dock::DockConfig, String> {
     Ok(out.dock.lock().map_err(|e| e.to_string())?.get())
+}
+
+/// Remove native window chrome and apply a frosted-glass blur. Must run after
+/// the window is fully created (i.e. from the frontend after mount); doing it
+/// in setup() does not always persist the style change.
+///
+/// NOTE: use `apply_blur`, NOT `apply_acrylic`. On Windows 11 `apply_acrylic`
+/// forces a `WS_CAPTION` (native titlebar) back onto the window, which fights
+/// the borderless custom titlebar. `apply_blur` gives the same frosted look on
+/// a decoration-less window.
+#[tauri::command]
+fn apply_immersive(window: tauri::WebviewWindow) -> Result<(), String> {
+    let _ = window.set_decorations(false);
+    #[cfg(target_os = "windows")]
+    {
+        use window_vibrancy::apply_blur;
+        let _ = apply_blur(&window, Some((18, 18, 22, 255)));
+    }
+    Ok(())
 }
 
 #[tauri::command]

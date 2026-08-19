@@ -10,6 +10,7 @@
   --accent-soft: rgba(110, 139, 255, 0.14);
   --amber: #f5b454;
   --red: #f2768f;
+  --green: #4fd08a;
   --radius: 10px;
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 }
@@ -17,24 +18,54 @@
 * {
   box-sizing: border-box;
 }
+
 html,
 body {
   margin: 0;
   height: 100%;
 }
+
 body {
-  background: var(--bg);
+  background: transparent;
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* ---------- Scrollbars (thin, subtle, modern) ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+  background-clip: padding-box;
+}
+
 .app {
-  padding: 12px 14px 16px;
+  padding: 10px 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: rgba(12, 13, 18, 0.55);
+  border-radius: 12px;
 }
 
 /* ---------- Header / wordmark ---------- */
@@ -42,60 +73,79 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 2px 12px;
+  padding: 2px 2px 8px;
   margin-bottom: 4px;
   border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  app-region: drag;
+  position: sticky;
+  top: 0;
+  background: rgba(12, 13, 18, 0.72);
+  backdrop-filter: blur(8px);
+  z-index: 2;
 }
 .wordmark {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  gap: 7px;
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.2px;
+  cursor: default;
 }
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   box-shadow: 0 0 8px currentColor;
 }
 .dock-controls {
   display: flex;
-  gap: 4px;
+  gap: 3px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 .iconbtn {
-  width: 28px;
-  height: 26px;
+  width: 26px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
-.iconbtn-c:hover {
+.iconbtn:hover {
   color: var(--fg);
-  border-color: var(--faint);
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.06);
+}
+.iconbtn-close:hover {
+  color: #fff;
+  background: var(--red);
+}
+.sep {
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+  margin: 0 2px;
 }
 
 /* ---------- Stat tiles (CPU / Memory) ---------- */
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 14px 0;
+  gap: 10px;
+  padding: 10px 2px;
   border-bottom: 1px solid var(--line);
 }
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .stat-top {
   display: flex;
@@ -103,41 +153,41 @@ body {
   justify-content: space-between;
 }
 .stat-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 600;
   letter-spacing: 0.3px;
 }
 .stat-val {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .stat-unit {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 500;
   margin-left: 1px;
 }
 .stat-sub {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--faint);
 }
 
 /* ---------- Sections ---------- */
 .section {
-  padding: 14px 0;
+  padding: 10px 2px;
   border-bottom: 1px solid var(--line);
 }
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .section-title {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 600;
   letter-spacing: 0.3px;
@@ -146,7 +196,7 @@ body {
 
 /* ---------- Bars (shared) ---------- */
 .track {
-  height: 6px;
+  height: 5px;
   background: var(--surface-2);
   border-radius: 4px;
   overflow: hidden;
@@ -160,8 +210,8 @@ body {
 /* ---------- Network ---------- */
 .net-speeds {
   display: flex;
-  gap: 12px;
-  font-size: 12px;
+  gap: 10px;
+  font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -179,13 +229,13 @@ body {
 .disk-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 }
 .disk-head {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  margin-bottom: 5px;
+  font-size: 11px;
+  margin-bottom: 4px;
 }
 .disk-mp {
   font-weight: 600;
@@ -195,23 +245,24 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .disk-foot {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--faint);
-  margin-top: 5px;
+  margin-top: 4px;
 }
 
 /* ---------- Processes ---------- */
 .proc-list {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
 }
 .proc-row {
   display: grid;
-  grid-template-columns: 1fr 64px 46px 52px;
+  grid-template-columns: 1fr 56px 46px 52px;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11px;
+  min-height: 20px;
 }
 .proc-name {
   font-weight: 550;
@@ -220,7 +271,7 @@ body {
   text-overflow: ellipsis;
 }
 .proc-bar-wrap {
-  height: 5px;
+  height: 4px;
   background: var(--surface-2);
   border-radius: 3px;
   overflow: hidden;
@@ -244,18 +295,22 @@ body {
 /* ---------- Quick actions ---------- */
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .btn {
   flex: 1;
-  min-width: 92px;
+  min-width: 88px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: var(--surface-2);
   color: var(--fg);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 12px;
-  font-size: 12px;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 11px;
   font-weight: 550;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
@@ -267,21 +322,32 @@ body {
 .btn:active {
   transform: translateY(1px);
 }
+.btn-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+.btn:hover .btn-icon {
+  color: var(--fg);
+}
+.btn-add {
+  flex: 0 0 auto;
+  min-width: 56px;
+}
 
 /* ---------- Notes ---------- */
 .note-input {
   display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 .note-input input {
   flex: 1;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 12px;
+  border-radius: 7px;
+  padding: 7px 10px;
   color: var(--fg);
-  font-size: 12px;
+  font-size: 11px;
 }
 .note-input input:focus {
   outline: none;
@@ -293,8 +359,8 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 150px;
+  gap: 5px;
+  max-height: 120px;
   overflow-y: auto;
 }
 .notes li {
@@ -304,39 +370,58 @@ body {
   gap: 8px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.note-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .x {
   background: transparent;
   border: none;
   color: var(--faint);
   cursor: pointer;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
 }
 .x:hover {
   color: var(--red);
 }
 
-/* ---------- System info + footer ---------- */
-.sysinfo {
+/* ---------- Empty state ---------- */
+.empty {
+  font-size: 10px;
+  color: var(--faint);
+  font-style: italic;
+  padding: 2px 0;
+}
+
+/* ---------- Status bar (merged sysinfo + footer) ---------- */
+.statusbar {
   display: flex;
+  align-items: center;
+  gap: 7px;
   flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
-  padding: 12px 0 4px;
+  padding: 10px 2px 2px;
   border-top: 1px solid var(--line);
 }
-.foot {
-  text-align: center;
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  flex: 0 0 auto;
+}
+.status-time {
+  margin-left: auto;
   color: var(--faint);
-  font-size: 10px;
-  padding-top: 6px;
 }
 
 /* ---------- Error ---------- */
@@ -345,7 +430,7 @@ body {
   color: var(--red);
   border: 1px solid rgba(242, 118, 143, 0.3);
   border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
-  margin-bottom: 8px;
+  padding: 7px 10px;
+  font-size: 11px;
+  margin-bottom: 6px;
 }

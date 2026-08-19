@@ -1,3 +1,9 @@
+export interface DockConfig {
+  edge: "none" | "left" | "right";
+  width: number;
+  always_on_top: boolean;
+}
+
 export interface DiskInfo {
   name: string;
   file_system: string;

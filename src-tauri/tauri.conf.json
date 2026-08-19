@@ -15,15 +15,15 @@
       {
         "title": "Windash",
         "label": "main",
-        "width": 520,
-        "height": 680,
-        "minWidth": 420,
-        "minHeight": 540,
+        "width": 360,
+        "height": 720,
+        "minWidth": 320,
+        "minHeight": 480,
         "resizable": true,
         "fullscreen": false,
-        "center": true,
+        "center": false,
         "decorations": true,
-        "alwaysOnTop": false,
+        "alwaysOnTop": true,
         "transparent": false,
         "skipTaskbar": false
       }

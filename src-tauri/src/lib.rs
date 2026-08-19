@@ -219,6 +219,14 @@ pub fn run() {
                     let _ = window.emit("windash://dock", d);
                 }
             }
+            tauri::WindowEvent::Focused(focused) => {
+                // When the window regains focus, tell the frontend to refresh
+                // the OS theme (so "Follow Windows" stays in sync without
+                // polling `reg` on a timer — which would flash consoles).
+                if *focused {
+                    let _ = window.emit("windash://focused", ());
+                }
+            }
             tauri::WindowEvent::Resized(size) => {
                 let scale = window.scale_factor().unwrap_or(1.0);
                 let _ = window.emit(
@@ -299,9 +307,12 @@ fn open_explorer(pid: Option<u64>) -> Result<(), String> {
     };
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        // CREATE_NO_WINDOW (0x08000000) keeps Explorer from flashing a console.
         Command::new("explorer.exe")
             .arg(target)
+            .creation_flags(0x0800_0000)
             .spawn()
             .map_err(|e| format!("open explorer: {}", e))?;
         Ok(())
@@ -321,9 +332,12 @@ fn windows_search(query: Option<String>) -> Result<(), String> {
     };
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        // CREATE_NO_WINDOW (0x08000000) keeps Search from flashing a console.
         Command::new("explorer.exe")
             .arg(target)
+            .creation_flags(0x0800_0000)
             .spawn()
             .map_err(|e| format!("windows search: {}", e))?;
         Ok(())
@@ -342,9 +356,12 @@ fn windows_search(query: Option<String>) -> Result<(), String> {
 fn end_process(pid: u64) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        // CREATE_NO_WINDOW (0x08000000) avoids flashing a console on every kill.
         let out = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/F"])
+            .creation_flags(0x0800_0000)
             .output()
             .map_err(|e| format!("spawn taskkill: {}", e))?;
         if out.status.success() {
@@ -415,7 +432,9 @@ fn set_always_on_top(value: bool, out: tauri::State<'_, AppState>) -> Result<(),
 fn get_system_theme() -> String {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        // CREATE_NO_WINDOW (0x08000000) avoids flashing a console window.
         let out = Command::new("reg")
             .args([
                 "query",
@@ -423,13 +442,17 @@ fn get_system_theme() -> String {
                 "/v",
                 "AppsUseLightTheme",
             ])
+            .creation_flags(0x0800_0000)
             .output();
         if let Ok(o) = out {
             let text = String::from_utf8_lossy(&o.stdout);
             // Value looks like:  ...    0x1\n
             // Parse the hex value after "0x" robustly.
             if let Some(idx) = text.find("0x") {
-                if let Ok(val) = u32::from_str_radix(text[idx + 2..].trim().split_whitespace().next().unwrap_or("0"), 16) {
+                if let Ok(val) = u32::from_str_radix(
+                    text[idx + 2..].trim().split_whitespace().next().unwrap_or("0"),
+                    16,
+                ) {
                     return if val == 0 { "dark".to_string() } else { "light".to_string() };
                 }
             }

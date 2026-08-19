@@ -25,7 +25,6 @@ sysinfo = { version = "0.32", default-features = false, features = ["system", "n
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 env_logger = "0.11"
-dirs = "6"
 
 [profile.release]
 strip = true

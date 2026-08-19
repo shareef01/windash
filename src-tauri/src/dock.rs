@@ -15,13 +15,6 @@ pub enum DockEdge {
 }
 
 impl DockEdge {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            DockEdge::None => "none",
-            DockEdge::Left => "left",
-            DockEdge::Right => "right",
-        }
-    }
     pub fn from_str(s: &str) -> DockEdge {
         match s {
             "left" => DockEdge::Left,

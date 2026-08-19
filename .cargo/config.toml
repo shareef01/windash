@@ -1,0 +1,10 @@
+# Build configuration for Windows.
+#
+# - crt-static: statically link the MSVC C runtime so the .exe runs on machines
+#   without a matching Visual C++ Redistributable.
+# - tauri_build::build() (in build.rs) embeds the default Windows manifest, which
+#   opts into comctl32 v6 (required for TaskDialogIndirect et al). Without the
+#   manifest the OS loads comctl32 v5.82 and the process fails at load with
+#   STATUS_ENTRYPOINT_NOT_FOUND (0xC0000139).
+[build]
+rustflags = ["-C", "target-feature=+crt-static"]

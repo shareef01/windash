@@ -33,11 +33,18 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState<number>(390);
+  const [systemTheme, setSystemTheme] = useState<"dark" | "light">("dark");
   const timer = useRef<number | null>(null);
 
   // Derive a responsive layout mode from the current window width.
   const layout: "compact" | "normal" | "expanded" =
     width < 320 ? "compact" : width > 480 ? "expanded" : "normal";
+
+  // Effective theme: "system" follows the OS; otherwise use the explicit choice.
+  const effectiveTheme: "dark" | "light" =
+    settings?.theme === "system" || !settings
+      ? systemTheme
+      : (settings.theme as "dark" | "light");
 
   async function refresh() {
     try {
@@ -66,6 +73,14 @@ export default function App() {
     }
   }
 
+  async function loadSystemTheme() {
+    try {
+      setSystemTheme((await invoke<string>("get_system_theme")) as "dark" | "light");
+    } catch {
+      /* keep dark default */
+    }
+  }
+
   async function loadDock() {
     try {
       const cfg = await invoke<DockConfig>("get_dock");
@@ -89,6 +104,7 @@ export default function App() {
     refresh();
     loadNotes();
     loadSettings();
+    loadSystemTheme();
     loadDock();
     timer.current = window.setInterval(refresh, settings?.refresh_ms ?? 2000);
     return () => {
@@ -141,7 +157,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app layout-${layout}`}>
+    <div className={`app layout-${layout}`} data-theme={effectiveTheme}>
       <DockBar
         dock={dock}
         onDock={setDock}

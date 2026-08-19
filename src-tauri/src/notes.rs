@@ -37,6 +37,9 @@ impl NotesStore {
     }
 
     fn ensure_exists(&self) -> Result<(), String> {
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
+        }
         if !self.path.exists() {
             fs::write(
                 &self.path,

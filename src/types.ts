@@ -47,7 +47,6 @@ export interface Settings {
   always_on_top: boolean;
   refresh_ms: number;
   theme: "dark" | "light" | "system";
-  dock_edge: string;
   show_disks: boolean;
   show_processes: boolean;
   show_notes: boolean;

@@ -7,15 +7,19 @@ import {
   IconSettings,
   IconMinimize,
   IconClose,
+  IconPause,
+  IconPlay,
 } from "./icons";
 
 interface Props {
   dock: DockConfig | null;
+  paused: boolean;
+  onTogglePause: () => void;
   onDock: (edge: "none" | "left" | "right") => void;
   onSettings: () => void;
 }
 
-export function DockBar({ dock, onDock, onSettings }: Props) {
+export function DockBar({ dock, paused, onTogglePause, onDock, onSettings }: Props) {
   const edge = dock?.edge ?? "right";
   return (
     <div className="header">
@@ -26,6 +30,14 @@ export function DockBar({ dock, onDock, onSettings }: Props) {
         <span>Windash</span>
       </div>
       <span className="dock-controls">
+        <button
+          className="iconbtn"
+          onClick={onTogglePause}
+          title={paused ? "Resume monitoring" : "Pause monitoring"}
+          aria-label={paused ? "Resume monitoring" : "Pause monitoring"}
+        >
+          {paused ? <IconPlay size={15} /> : <IconPause size={15} />}
+        </button>
         <button
           className={"iconbtn" + (edge === "left" ? " active" : "")}
           onClick={() => onDock("left")}

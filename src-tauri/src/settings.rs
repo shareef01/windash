@@ -14,7 +14,6 @@ pub struct Settings {
     pub refresh_ms: u64,
     /// "dark" | "light" | "system"
     pub theme: String,
-    pub dock_edge: String,
     pub show_disks: bool,
     pub show_processes: bool,
     pub show_notes: bool,
@@ -27,7 +26,6 @@ impl Default for Settings {
             always_on_top: true,
             refresh_ms: 2000,
             theme: "system".into(),
-            dock_edge: "right".into(),
             show_disks: true,
             show_processes: true,
             show_notes: true,
@@ -58,7 +56,10 @@ impl SettingsStore {
         };
         store.ensure_exists()?;
         let cache = store.load()?.settings;
-        Ok(Self { path: store.path, cache })
+        Ok(Self {
+            path: store.path,
+            cache,
+        })
     }
 
     fn ensure_exists(&self) -> Result<(), String> {
@@ -123,9 +124,6 @@ impl SettingsStore {
         if let Some(v) = patch.theme {
             s.theme = v;
         }
-        if let Some(v) = patch.dock_edge {
-            s.dock_edge = v;
-        }
         if let Some(v) = patch.show_disks {
             s.show_disks = v;
         }
@@ -149,7 +147,6 @@ pub struct SettingsPatch {
     pub always_on_top: Option<bool>,
     pub refresh_ms: Option<u64>,
     pub theme: Option<String>,
-    pub dock_edge: Option<String>,
     pub show_disks: Option<bool>,
     pub show_processes: Option<bool>,
     pub show_notes: Option<bool>,

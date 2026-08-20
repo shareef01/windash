@@ -16,10 +16,10 @@ use notes::NotesStore;
 use settings::SettingsStore;
 use std::sync::Mutex;
 use tauri::{
+    image::Image,
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager,
-    image::Image,
 };
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
@@ -55,24 +55,24 @@ pub fn run() {
             // Global show/hide shortcut: Ctrl+Shift+D toggles the window.
             // Registered from Rust so it works even when the window is hidden
             // (the frontend cannot listen while hidden).
-            if let Err(e) = app.global_shortcut().on_shortcut(
-                "CmdOrCtrl+Shift+D",
-                |app, _shortcut, event| {
-                    // Only act on key press, not release (avoids double-toggle).
-                    if event.state != tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        return;
-                    }
-                    if let Some(window) = app.get_webview_window("main") {
-                        if window.is_visible().unwrap_or(false) {
-                            let _ = window.hide();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            let _ = window.unminimize();
+            if let Err(e) =
+                app.global_shortcut()
+                    .on_shortcut("CmdOrCtrl+Shift+D", |app, _shortcut, event| {
+                        // Only act on key press, not release (avoids double-toggle).
+                        if event.state != tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            return;
                         }
-                    }
-                },
-            ) {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                let _ = window.unminimize();
+                            }
+                        }
+                    })
+            {
                 log::error!("failed to register global shortcut: {e}");
             }
 
@@ -164,7 +164,6 @@ pub fn run() {
             get_notes,
             add_note,
             delete_note,
-            launch_app,
             get_dock,
             set_dock,
             apply_immersive,
@@ -239,9 +238,7 @@ pub fn run() {
                 // Persist floating geometry (size) when not docked.
                 let st = window.state::<AppState>();
                 if st.dock.lock().unwrap().get().edge() == dock::DockEdge::None {
-                    if let (Ok(pos), Ok(outer)) =
-                        (window.outer_position(), window.outer_size())
-                    {
+                    if let (Ok(pos), Ok(outer)) = (window.outer_position(), window.outer_size()) {
                         let g = geom::WindowGeom {
                             x: pos.x,
                             y: pos.y,
@@ -259,10 +256,18 @@ pub fn run() {
 }
 
 #[tauri::command]
-fn get_metrics(out: tauri::State<'_, AppState>) -> Result<metrics::MetricsSnapshot, String> {
+fn get_metrics(
+    sort_by: Option<String>,
+    out: tauri::State<'_, AppState>,
+) -> Result<metrics::MetricsSnapshot, String> {
     let mut metrics = out.metrics.lock().map_err(|e| e.to_string())?;
     metrics.refresh();
-    metrics.snapshot().map_err(|e| e.to_string())
+    let sort = match sort_by.as_deref() {
+        Some("mem") => metrics::SortKey::Mem,
+        Some("name") => metrics::SortKey::Name,
+        _ => metrics::SortKey::Cpu,
+    };
+    metrics.snapshot(sort).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -283,24 +288,19 @@ fn delete_note(id: u64, out: tauri::State<'_, AppState>) -> Result<(), String> {
     notes.delete(id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn launch_app(app: AppHandle, target: String) -> Result<(), String> {
-    use tauri_plugin_opener::OpenerExt;
-    app.opener()
-        .open_url(target, None::<&str>)
-        .map_err(|e| format!("open url: {}", e))
-}
-
 /// Open File Explorer. If `pid` is provided, open the folder containing that
 /// process' executable (a real "open file location" action). Otherwise opens
 /// the user's home directory. Uses the native Windows `explorer.exe` so it
 /// behaves exactly like a real Windows utility.
 #[tauri::command]
-fn open_explorer(pid: Option<u64>) -> Result<(), String> {
+fn open_explorer(pid: Option<u64>, out: tauri::State<'_, AppState>) -> Result<(), String> {
     let target = match pid {
         Some(p) => {
-            let sys = SystemMetrics::new();
-            sys.exe_dir_for_pid(p)
+            // Reuse the shared System instance (never build a fresh one) so we
+            // don't disturb the CPU sampling interval.
+            let metrics = out.metrics.lock().map_err(|e| e.to_string())?;
+            metrics
+                .exe_dir_for_pid(p)
                 .ok_or_else(|| "Could not locate that process' executable.".to_string())?
         }
         None => directories_home().unwrap_or_else(|| "shell:MyComputerFolder".into()),
@@ -399,18 +399,7 @@ fn update_settings(
         .map_err(|e| e.to_string())?
         .update(patch)
         .map_err(|e| e.to_string())?;
-    // Apply side-effects immediately.
-    if let Some(edge) = if s.dock_edge != "none" {
-        Some(s.dock_edge.clone())
-    } else {
-        None
-    } {
-        let _ = dock::apply_dock(&window, &dock::DockConfig {
-            edge: edge.clone(),
-            width: 390,
-            always_on_top: s.always_on_top,
-        });
-    }
+    // Apply the always-on-top side-effect immediately.
     let _ = window.set_always_on_top(s.always_on_top);
     Ok(s)
 }
@@ -450,10 +439,18 @@ fn get_system_theme() -> String {
             // Parse the hex value after "0x" robustly.
             if let Some(idx) = text.find("0x") {
                 if let Ok(val) = u32::from_str_radix(
-                    text[idx + 2..].trim().split_whitespace().next().unwrap_or("0"),
+                    text[idx + 2..]
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("0"),
                     16,
                 ) {
-                    return if val == 0 { "dark".to_string() } else { "light".to_string() };
+                    return if val == 0 {
+                        "dark".to_string()
+                    } else {
+                        "light".to_string()
+                    };
                 }
             }
         }
@@ -468,9 +465,6 @@ fn get_system_theme() -> String {
 
 /// Remove native window chrome and apply a frosted-glass blur. Must run after
 /// the window is fully created (i.e. from the frontend after mount).
-///
-/// NOTE: use `apply_blur`, NOT `apply_acrylic`. On Windows 11 `apply_acrylic`
-/// forces a `WS_CAPTION` (native titlebar) back onto the window.
 #[tauri::command]
 fn apply_immersive(window: tauri::WebviewWindow) -> Result<(), String> {
     let _ = window.set_decorations(false);

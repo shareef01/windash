@@ -34,6 +34,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState<number>(390);
   const [systemTheme, setSystemTheme] = useState<"dark" | "light">("dark");
+  const [paused, setPaused] = useState(false);
   const timer = useRef<number | null>(null);
 
   // Derive a responsive layout mode from the current window width.
@@ -48,7 +49,7 @@ export default function App() {
 
   async function refresh() {
     try {
-      const m = await invoke<MetricsSnapshot>("get_metrics");
+      const m = await invoke<MetricsSnapshot>("get_metrics", { sort_by: sortKey });
       setMetrics(m);
       setStream((s) => [...s.slice(-59), m.network_rx_bytes]);
       setError(null);
@@ -106,11 +107,20 @@ export default function App() {
     loadSettings();
     loadSystemTheme();
     loadDock();
+  }, []);
+
+  // Single source of truth for the polling timer. Re-arms whenever the refresh
+  // interval or the active sort changes, and stops entirely while paused.
+  useEffect(() => {
+    if (timer.current) window.clearInterval(timer.current);
+    if (paused) return;
+    // Immediate refresh so a new sort key / interval takes effect at once.
+    refresh();
     timer.current = window.setInterval(refresh, settings?.refresh_ms ?? 2000);
     return () => {
       if (timer.current) window.clearInterval(timer.current);
     };
-  }, []);
+  }, [settings?.refresh_ms, sortKey, paused]);
 
   // React to native window events emitted from Rust (resize / auto-dock / focus).
   useEffect(() => {
@@ -130,15 +140,6 @@ export default function App() {
     }).then((u) => unlisten.push(u));
     return () => unlisten.forEach((u) => u());
   }, []);
-
-  // Re-arm the interval when the refresh setting changes.
-  useEffect(() => {
-    if (timer.current) window.clearInterval(timer.current);
-    timer.current = window.setInterval(refresh, settings?.refresh_ms ?? 2000);
-    return () => {
-      if (timer.current) window.clearInterval(timer.current);
-    };
-  }, [settings?.refresh_ms]);
 
   // When the theme follows Windows, re-read the OS theme when the window is
   // (re)focused so switching the OS light/dark mode updates Windash — but we
@@ -174,6 +175,8 @@ export default function App() {
     <div className={`app layout-${layout}`} data-theme={effectiveTheme}>
       <DockBar
         dock={dock}
+        paused={paused}
+        onTogglePause={() => setPaused((p) => !p)}
         onDock={setDock}
         onSettings={() => setShowSettings((v) => !v)}
       />
@@ -235,14 +238,18 @@ export default function App() {
       )}
 
       <div className="statusbar">
-        <span className="status-dot" />
+        <span className="status-dot" style={paused ? { background: "var(--amber)", boxShadow: "0 0 7px var(--amber)" } : undefined} />
         <span>
           {metrics
             ? `${metrics.os_name || "Windows"} · ${metrics.process_count} processes · up ${fmtUptime(metrics.uptime_seconds)}`
             : "Collecting system info…"}
         </span>
         <span className="status-time">
-          {metrics ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}` : ""}
+          {paused
+            ? "paused"
+            : metrics
+              ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}`
+              : ""}
         </span>
       </div>
     </div>

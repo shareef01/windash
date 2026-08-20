@@ -41,11 +41,8 @@ impl GeomStore {
                 width: 390,
                 height: 720,
             };
-            fs::write(
-                &self.path,
-                serde_json::to_string_pretty(&default).unwrap(),
-            )
-            .map_err(|e| format!("write: {}", e))?;
+            fs::write(&self.path, serde_json::to_string_pretty(&default).unwrap())
+                .map_err(|e| format!("write: {}", e))?;
         }
         Ok(())
     }

@@ -25,13 +25,30 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
     return <div className="empty">No processes.</div>;
   }
 
-  const sorted = [...procs].sort((a, b) => {
-    if (sortKey === "name") return a.name.localeCompare(b.name);
-    if (sortKey === "mem") return b.mem - a.mem;
-    return b.cpu - a.cpu;
-  });
+  // Backend already returns the list pre-sorted by the active key; keep order
+  // stable so rows don't jump between refreshes.
+  const sorted = procs;
 
   const byPid = (pid: number) => sorted.find((p) => p.pid === pid);
+
+  // Keyboard navigation: Up/Down move selection, Enter opens the context menu.
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (sorted.length === 0) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const idx = sorted.findIndex((p) => p.pid === selectedPid);
+      let next = idx < 0 ? 0 : idx + (e.key === "ArrowDown" ? 1 : -1);
+      next = Math.max(0, Math.min(sorted.length - 1, next));
+      onSelect(sorted[next].pid);
+    } else if (e.key === "Enter" && selectedPid != null) {
+      e.preventDefault();
+      const row = document.querySelector<HTMLElement>(`[data-pid="${selectedPid}"]`);
+      if (row) {
+        const r = row.getBoundingClientRect();
+        setMenu({ pid: selectedPid, x: r.left, y: r.bottom });
+      }
+    }
+  }
 
   async function openLocation(p: ProcInfo | undefined) {
     if (!p) return;
@@ -55,7 +72,13 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
   }
 
   return (
-    <section className="section">
+    <section
+      className="section"
+      tabIndex={0}
+      role="grid"
+      aria-label="Processes"
+      onKeyDown={onKeyDown}
+    >
       <div className="section-head">
         <span className="section-title">
           <IconProcess size={13} /> Processes
@@ -83,6 +106,9 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
       {sorted.map((p) => (
         <div
           key={p.pid}
+          data-pid={p.pid}
+          role="row"
+          aria-selected={selectedPid === p.pid}
           className={"proc-row" + (selectedPid === p.pid ? " selected" : "")}
           onClick={() => onSelect(selectedPid === p.pid ? null : p.pid)}
           onContextMenu={(e) => {

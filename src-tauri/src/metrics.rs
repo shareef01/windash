@@ -5,6 +5,16 @@
 use sysinfo::{Disks, Networks, System};
 use std::time::{Duration, Instant};
 
+/// How the process list should be pre-sorted for the frontend. The backend
+/// sorts the top-N pool by this key so the rendered order matches the user's
+/// active sort and doesn't jump between refreshes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    Cpu,
+    Mem,
+    Name,
+}
+
 pub struct SystemMetrics {
     system: System,
     networks: Networks,
@@ -54,6 +64,12 @@ impl SystemMetrics {
     /// Resolve the directory containing a process' executable, for the
     /// "open file location" action. Returns None if the process isn't found or
     /// has no usable path.
+    ///
+    /// IMPORTANT: reuses the shared `System` in this struct. Previously this
+    /// built a fresh `System::new_all()` on every call, which forces a full
+    /// process/CPU re-scan and skews the CPU sampling interval used by the
+    /// next `get_metrics` tick (sysinfo's `cpu_usage()` is measured against the
+    /// last refresh). A throwaway System here corrupted the real one's timing.
     pub fn exe_dir_for_pid(&self, pid: u64) -> Option<String> {
         for (p, process) in self.system.processes() {
             if p.as_u32() as u64 == pid {
@@ -67,7 +83,7 @@ impl SystemMetrics {
         None
     }
 
-    pub fn snapshot(&self) -> Result<MetricsSnapshot, String> {
+    pub fn snapshot(&self, sort: SortKey) -> Result<MetricsSnapshot, String> {
         let sys = &self.system;
 
         // Memory (inherent methods on System in 0.32)
@@ -138,9 +154,22 @@ impl SystemMetrics {
             });
         }
         procs.sort_by(|a, b| {
-            b.cpu
-                .partial_cmp(&a.cpu)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            let ord = match sort {
+                SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                SortKey::Mem => b.mem.cmp(&a.mem),
+                SortKey::Cpu => b
+                    .cpu
+                    .partial_cmp(&a.cpu)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            };
+            // Secondary sort by CPU so equal-key rows stay stable frame-to-frame.
+            if ord == std::cmp::Ordering::Equal {
+                b.cpu
+                    .partial_cmp(&a.cpu)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                ord
+            }
         });
         procs.truncate(30);
 

@@ -140,7 +140,7 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let dock_cfg = app.state::<AppState>().dock.lock().unwrap().get();
                 if dock_cfg.edge() == dock::DockEdge::None {
-                    let g = app.state::<AppState>().geom.lock().unwrap().get();
+                    let g = app.state::<AppState>().geom.lock().unwrap().get("none");
                     use tauri::{LogicalPosition, LogicalSize};
                     let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
                     let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
@@ -179,19 +179,23 @@ pub fn run() {
         ])
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_pos) => {
-                // Only auto-dock while floating (a docked sidebar is not movable).
                 let state = window.state::<AppState>();
                 let edge = { state.dock.lock().unwrap().get().edge };
-                if edge != "none" {
-                    return;
-                }
                 // The event gives a `&Window`; get the `WebviewWindow` for the
                 // docking helpers.
                 let wv = match window.get_webview_window("main") {
                     Some(w) => w,
                     None => return,
                 };
-                // Persist floating geometry (position) on every move while floating.
+                if edge != "none" {
+                    // Docked: re-snap to the *current* monitor so dragging the
+                    // window (or moving it across mixed-DPI displays) keeps it
+                    // glued to the correct edge at the right scale.
+                    let cfg = state.dock.lock().unwrap().get();
+                    let _ = dock::apply_dock(&wv, &cfg);
+                    return;
+                }
+                // Floating: persist geometry (keyed by edge) on every move.
                 if let (Ok(pos), Ok(outer)) = (wv.outer_position(), wv.outer_size()) {
                     let g = geom::WindowGeom {
                         x: pos.x,
@@ -199,7 +203,7 @@ pub fn run() {
                         width: outer.width,
                         height: outer.height,
                     };
-                    let _ = state.geom.lock().unwrap().set(&g);
+                    let _ = state.geom.lock().unwrap().set("none", &g);
                 }
                 if let Some(detected) = dock::detect_edge(&wv) {
                     let d = match detected {
@@ -245,7 +249,19 @@ pub fn run() {
                             width: outer.width,
                             height: outer.height,
                         };
-                        let _ = st.geom.lock().unwrap().set(&g);
+                        let _ = st.geom.lock().unwrap().set("none", &g);
+                    }
+                }
+            }
+            // DPI / scale-factor or theme change (e.g. moving across monitors, or
+            // the user changes the display scaling): re-snap a docked sidebar to
+            // the current monitor so it stays correctly placed and sized.
+            tauri::WindowEvent::ScaleFactorChanged { .. } | tauri::WindowEvent::ThemeChanged(_) => {
+                let state = window.state::<AppState>();
+                if state.dock.lock().unwrap().get().edge() != dock::DockEdge::None {
+                    if let Some(wv) = window.get_webview_window("main") {
+                        let cfg = state.dock.lock().unwrap().get();
+                        let _ = dock::apply_dock(&wv, &cfg);
                     }
                 }
             }
@@ -463,14 +479,20 @@ fn get_system_theme() -> String {
     }
 }
 
-/// Remove native window chrome and apply a frosted-glass blur. Must run after
-/// the window is fully created (i.e. from the frontend after mount).
+/// Remove native window chrome and apply a modern Windows 11 backdrop.
+/// Uses Mica (the system-drawn titlebar material) when available on Windows 11,
+/// falling back to a frosted acrylic/blur for older builds. Must run after the
+/// window is fully created (i.e. from the frontend after mount).
 #[tauri::command]
 fn apply_immersive(window: tauri::WebviewWindow) -> Result<(), String> {
     let _ = window.set_decorations(false);
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::apply_blur;
+        use window_vibrancy::{apply_blur, apply_mica};
+        // Mica on Windows 11 (system-drawn titlebar material); blur fallback
+        // for older builds. window-vibrancy also requests rounded corners from
+        // DWM on Windows 11, so the chrome-less window stays on-theme.
+        let _ = apply_mica(&window, Some(true));
         let _ = apply_blur(&window, Some((18, 18, 22, 255)));
     }
     Ok(())
@@ -492,7 +514,7 @@ fn set_dock(
     // When un-docking, restore the saved floating geometry (size + position)
     // so the window doesn't stay a full-height sidebar shape.
     if cfg.edge() == dock::DockEdge::None {
-        let g = out.geom.lock().unwrap().get();
+        let g = out.geom.lock().unwrap().get("none");
         use tauri::{LogicalPosition, LogicalSize};
         let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
         let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));

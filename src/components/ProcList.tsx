@@ -2,6 +2,7 @@ import type { ProcInfo } from "../types";
 import { cpuColor, fmtSize } from "../theme";
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
+import { IconProcess, IconFolder, IconClose } from "./icons";
 
 interface Props {
   procs: ProcInfo[];
@@ -56,7 +57,9 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
   return (
     <section className="section">
       <div className="section-head">
-        <span>PROCESSES</span>
+        <span className="section-title">
+          <IconProcess size={13} /> Processes
+        </span>
         <div className="sort">
           {(["cpu", "mem", "name"] as const).map((k) => (
             <button
@@ -116,14 +119,14 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
               disabled={!byPid(menu.pid)?.exe}
               onClick={() => openLocation(byPid(menu.pid))}
             >
-              Open file location
+              <IconFolder size={14} /> Open file location
             </button>
             <button
               className="ctx-item ctx-danger"
               role="menuitem"
               onClick={() => endTask(byPid(menu.pid))}
             >
-              End task
+              <IconClose size={14} /> End task
             </button>
           </div>
         </>

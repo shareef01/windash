@@ -1,4 +1,5 @@
 import { fmtRate } from "../theme";
+import { IconNetwork } from "./icons";
 
 interface Props {
   rx: number; // bytes/sec
@@ -22,7 +23,9 @@ export function NetSpark({ rx, tx, stream }: Props) {
   return (
     <section className="section net">
       <div className="section-head">
-        <span className="section-title">Network</span>
+        <span className="section-title">
+          <IconNetwork size={13} /> Network
+        </span>
         <span className="net-speeds">
           <span className="net-dl">▼ {fmtRate(rx)}</span>
           <span className="net-ul">▲ {fmtRate(tx)}</span>

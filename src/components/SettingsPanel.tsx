@@ -4,14 +4,24 @@ import { invoke } from "@tauri-apps/api/core";
 interface Props {
   settings: Settings;
   onClose: () => void;
+  /** Called with the authoritative Settings returned by the backend after a
+   *  successful change, so the parent can re-render the panel in sync. */
+  onApply?: (s: Settings) => void;
+  /** Route failures to the app's error badge instead of a blocking alert. */
+  onError?: (e: string) => void;
 }
 
-export function SettingsPanel({ settings, onClose }: Props) {
+export function SettingsPanel({ settings, onClose, onApply, onError }: Props) {
   async function patch(p: Partial<Settings>) {
     try {
-      await invoke("update_settings", { patch: p });
+      const updated = await invoke<Settings>("update_settings", { patch: p });
+      // Mirror the authoritative result into parent state so the panel stays
+      // in sync (otherwise it keeps showing stale props and toggles revert).
+      onApply?.(updated);
     } catch (e) {
-      alert(String(e));
+      const msg = String(e);
+      if (onError) onError(msg);
+      else alert(msg);
     }
   }
 
@@ -19,7 +29,7 @@ export function SettingsPanel({ settings, onClose }: Props) {
     <div className="popover">
       <div className="popover-head">
         <span>Settings</span>
-        <button className="iconbtn" onClick={onClose} title="Close">
+        <button className="iconbtn" onClick={onClose} title="Close" aria-label="Close settings">
           &#10005;
         </button>
       </div>

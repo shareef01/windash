@@ -179,7 +179,12 @@ export default function App() {
       />
 
       {showSettings && settings && (
-        <SettingsPanel settings={settings} onClose={() => setShowSettings(false)} />
+        <SettingsPanel
+          settings={settings}
+          onClose={() => setShowSettings(false)}
+          onApply={(s) => setSettings(s)}
+          onError={(e) => setError(e)}
+        />
       )}
 
       {error && <div className="error">⚠ {error}</div>}
@@ -217,7 +222,7 @@ export default function App() {
         />
       )}
 
-      {settings?.show_actions !== false && <QuickActions onOpen={openUrl} />}
+      {settings?.show_actions !== false && <QuickActions onOpen={openUrl} onError={(e) => setError(e)} />}
 
       {settings?.show_notes !== false && (
         <NotesStrip

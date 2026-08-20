@@ -1,5 +1,6 @@
 import type { DiskInfo } from "../types";
 import { usageColor, fmtSize } from "../theme";
+import { IconDisk } from "./icons";
 
 interface Props {
   disks: DiskInfo[];
@@ -10,7 +11,9 @@ export function DiskList({ disks }: Props) {
   return (
     <section className="section">
       <div className="section-head">
-        <span className="section-title">Disks</span>
+        <span className="section-title">
+          <IconDisk size={13} /> Disks
+        </span>
       </div>
       <div className="disk-list">
         {disks.map((d) => {

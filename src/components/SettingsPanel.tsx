@@ -68,6 +68,15 @@ export function SettingsPanel({ settings, onClose, onApply, onError }: Props) {
         </select>
       </label>
 
+      <label className="row">
+        <span>Windows 11 Mica</span>
+        <input
+          type="checkbox"
+          checked={settings.mica_enabled}
+          onChange={(e) => patch({ mica_enabled: e.target.checked })}
+        />
+      </label>
+
       <div className="row col">
         <span>Show sections</span>
         <label>
@@ -105,7 +114,7 @@ export function SettingsPanel({ settings, onClose, onApply, onError }: Props) {
       </div>
 
       <div className="popover-foot">
-        Toggle window: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>
+        Toggle window: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> · Filter processes: <kbd>/</kbd>
       </div>
     </div>
   );

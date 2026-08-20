@@ -1,7 +1,7 @@
 import type { ProcInfo } from "../types";
 import { cpuColor, fmtSize } from "../theme";
 import { invoke } from "@tauri-apps/api/core";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { IconProcess, IconFolder, IconClose, IconSearch, IconCopy } from "./icons";
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   onSort: (k: "cpu" | "mem" | "name") => void;
   selectedPid: number | null;
   onSelect: (pid: number | null) => void;
+  onFocusFilter?: (fn: () => void) => void;
 }
 
 interface MenuState {
@@ -18,10 +19,17 @@ interface MenuState {
   y: number;
 }
 
-export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Props) {
+export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect, onFocusFilter }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  // Expose a focus helper so the parent can focus the filter via "/" or Ctrl+F.
+  useEffect(() => {
+    onFocusFilter?.(() => searchRef.current?.focus());
+    return () => onFocusFilter?.(() => {});
+  }, [onFocusFilter]);
 
   if (!procs || procs.length === 0) {
     return <div className="empty">No processes.</div>;
@@ -117,6 +125,7 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
       <div className="proc-search">
         <IconSearch size={13} />
         <input
+          ref={searchRef}
           type="text"
           value={query}
           placeholder="Filter processes…"

@@ -484,15 +484,20 @@ fn get_system_theme() -> String {
 /// falling back to a frosted acrylic/blur for older builds. Must run after the
 /// window is fully created (i.e. from the frontend after mount).
 #[tauri::command]
-fn apply_immersive(window: tauri::WebviewWindow) -> Result<(), String> {
+fn apply_immersive(
+    window: tauri::WebviewWindow,
+    out: tauri::State<'_, AppState>,
+) -> Result<(), String> {
     let _ = window.set_decorations(false);
     #[cfg(target_os = "windows")]
     {
         use window_vibrancy::{apply_blur, apply_mica};
-        // Mica on Windows 11 (system-drawn titlebar material); blur fallback
-        // for older builds. window-vibrancy also requests rounded corners from
-        // DWM on Windows 11, so the chrome-less window stays on-theme.
-        let _ = apply_mica(&window, Some(true));
+        // Mica on Windows 11 (system-drawn titlebar material) when enabled;
+        // always apply blur as the base material + rounded-corner fallback.
+        let mica = out.settings.lock().unwrap().get().mica_enabled;
+        if mica {
+            let _ = apply_mica(&window, Some(true));
+        }
         let _ = apply_blur(&window, Some((18, 18, 22, 255)));
     }
     Ok(())

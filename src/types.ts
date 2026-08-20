@@ -51,6 +51,8 @@ export interface Settings {
   show_processes: boolean;
   show_notes: boolean;
   show_actions: boolean;
+  mica_enabled: boolean;
+  sort_key: "cpu" | "mem" | "name";
 }
 
 export type SortKey = "cpu" | "mem" | "name";

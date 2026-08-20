@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { MetricsSnapshot, Note, DockConfig, Settings, SortKey } from "./types";
+import { fmtSize } from "./theme";
 import {
   Gauge,
   MemBar,
@@ -14,6 +15,7 @@ import {
   ProcList,
   SettingsPanel,
 } from "./components";
+import { IconCopy } from "./components/icons";
 
 function fmtUptime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -36,6 +38,8 @@ export default function App() {
   const [systemTheme, setSystemTheme] = useState<"dark" | "light">("dark");
   const [paused, setPaused] = useState(false);
   const timer = useRef<number | null>(null);
+  const focusFilterRef = useRef<(() => void) | null>(null);
+  const [statusFlash, setStatusFlash] = useState<string | null>(null);
 
   // Derive a responsive layout mode from the current window width.
   const layout: "compact" | "normal" | "expanded" =
@@ -68,7 +72,10 @@ export default function App() {
 
   async function loadSettings() {
     try {
-      setSettings(await invoke<Settings>("get_settings"));
+      const s = await invoke<Settings>("get_settings");
+      setSettings(s);
+      // Restore the persisted process sort key.
+      if (s.sort_key === "mem" || s.sort_key === "name") setSortKey(s.sort_key);
     } catch (e) {
       setError(String(e));
     }
@@ -150,6 +157,31 @@ export default function App() {
     loadSystemTheme();
   }, [settings?.theme]);
 
+  // Persist the active process sort key so it survives restarts.
+  useEffect(() => {
+    if (!settings) return;
+    if (settings.sort_key === sortKey) return;
+    invoke("update_settings", { patch: { sort_key: sortKey } }).catch(() => {});
+  }, [sortKey, settings]);
+
+  // Keyboard: "/" or Ctrl+F focuses the process filter from anywhere (unless
+  // the user is already typing in a field).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = document.activeElement;
+      const typing =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el as HTMLElement | null)?.isContentEditable;
+      if ((e.key === "/" && !typing) || (e.key === "f" && e.ctrlKey)) {
+        e.preventDefault();
+        focusFilterRef.current?.();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   async function addNote() {
     const t = noteText.trim();
     if (!t) return;
@@ -168,6 +200,24 @@ export default function App() {
       await loadNotes();
     } catch (e) {
       setError(String(e));
+    }
+  }
+
+  async function copySummary() {
+    if (!metrics) return;
+    const text = [
+      `Windash — ${metrics.os_name || "Windows"}`,
+      `CPU: ${metrics.cpu_percent.toFixed(1)}% (${metrics.cpu_cores} cores)`,
+      `Memory: ${fmtSize(metrics.memory_used_mb * 1024 * 1024)} / ${fmtSize(metrics.memory_total_mb * 1024 * 1024)} (${metrics.memory_percent}%)`,
+      `Processes: ${metrics.process_count}`,
+      `Uptime: ${fmtUptime(metrics.uptime_seconds)}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatusFlash("Copied system summary");
+      window.setTimeout(() => setStatusFlash(null), 1400);
+    } catch {
+      setError("Clipboard unavailable");
     }
   }
 
@@ -222,6 +272,7 @@ export default function App() {
           onSort={setSortKey}
           selectedPid={selectedPid}
           onSelect={setSelectedPid}
+          onFocusFilter={(fn) => (focusFilterRef.current = fn)}
         />
       )}
 
@@ -240,16 +291,28 @@ export default function App() {
       <div className="statusbar">
         <span className="status-dot" style={paused ? { background: "var(--amber)", boxShadow: "0 0 7px var(--amber)" } : undefined} />
         <span>
-          {metrics
-            ? `${metrics.os_name || "Windows"} · ${metrics.process_count} processes · up ${fmtUptime(metrics.uptime_seconds)}`
-            : "Collecting system info…"}
-        </span>
-        <span className="status-time">
-          {paused
-            ? "paused"
+          {statusFlash
+            ? statusFlash
             : metrics
-              ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}`
-              : ""}
+              ? `${metrics.os_name || "Windows"} · ${metrics.process_count} processes · up ${fmtUptime(metrics.uptime_seconds)}`
+              : "Collecting system info…"}
+        </span>
+        <span className="status-actions">
+          <button
+            className="status-copy"
+            onClick={copySummary}
+            title="Copy system summary"
+            aria-label="Copy system summary"
+          >
+            <IconCopy size={13} />
+          </button>
+          <span className="status-time">
+            {paused
+              ? "paused"
+              : metrics
+                ? `updated ${new Date(metrics.timestamp).toLocaleTimeString()}`
+                : ""}
+          </span>
         </span>
       </div>
     </div>

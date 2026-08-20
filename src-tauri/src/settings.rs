@@ -18,6 +18,10 @@ pub struct Settings {
     pub show_processes: bool,
     pub show_notes: bool,
     pub show_actions: bool,
+    /// Use the Windows 11 Mica backdrop for the window (falls back to blur).
+    pub mica_enabled: bool,
+    /// Last process sort key, persisted so it survives restarts.
+    pub sort_key: String,
 }
 
 impl Default for Settings {
@@ -30,6 +34,8 @@ impl Default for Settings {
             show_processes: true,
             show_notes: true,
             show_actions: true,
+            mica_enabled: true,
+            sort_key: "cpu".into(),
         }
     }
 }
@@ -136,6 +142,12 @@ impl SettingsStore {
         if let Some(v) = patch.show_actions {
             s.show_actions = v;
         }
+        if let Some(v) = patch.mica_enabled {
+            s.mica_enabled = v;
+        }
+        if let Some(v) = patch.sort_key {
+            s.sort_key = v;
+        }
         self.save(&s)?;
         self.cache = s.clone();
         Ok(s)
@@ -151,4 +163,6 @@ pub struct SettingsPatch {
     pub show_processes: Option<bool>,
     pub show_notes: Option<bool>,
     pub show_actions: Option<bool>,
+    pub mica_enabled: Option<bool>,
+    pub sort_key: Option<String>,
 }

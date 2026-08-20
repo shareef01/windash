@@ -37,6 +37,18 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(
+            tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                // A second launch must NOT start another monitoring loop — just
+                // bring the existing window to the front. This prevents multiple
+                // sysinfo pollers from running at once (which would spike CPU).
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }),
+        )
         .setup(|app| {
             let metrics = SystemMetrics::new();
             let notes = NotesStore::new(app.handle())?;

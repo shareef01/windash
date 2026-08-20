@@ -2,8 +2,8 @@
 // Uses sysinfo's refresh model: refresh_all() updates cpu_usage() to reflect
 // the interval since the last refresh. No manual delta math needed.
 
-use sysinfo::{Disks, Networks, System};
 use std::time::{Duration, Instant};
+use sysinfo::{Disks, Networks, System};
 
 /// How the process list should be pre-sorted for the frontend. The backend
 /// sorts the top-N pool by this key so the rendered order matches the user's

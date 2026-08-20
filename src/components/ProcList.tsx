@@ -2,7 +2,7 @@ import type { ProcInfo } from "../types";
 import { cpuColor, fmtSize } from "../theme";
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
-import { IconProcess, IconFolder, IconClose } from "./icons";
+import { IconProcess, IconFolder, IconClose, IconSearch, IconCopy } from "./icons";
 
 interface Props {
   procs: ProcInfo[];
@@ -20,16 +20,22 @@ interface MenuState {
 
 export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [query, setQuery] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
 
   if (!procs || procs.length === 0) {
     return <div className="empty">No processes.</div>;
   }
 
   // Backend already returns the list pre-sorted by the active key; keep order
-  // stable so rows don't jump between refreshes.
-  const sorted = procs;
+  // stable so rows don't jump between refreshes. Filtering is client-side by
+  // name (the top-30 pool is the candidate set).
+  const q = query.trim().toLowerCase();
+  const sorted = q
+    ? procs.filter((p) => p.name.toLowerCase().includes(q) || (p.exe ?? "").toLowerCase().includes(q))
+    : procs;
 
-  const byPid = (pid: number) => sorted.find((p) => p.pid === pid);
+  const byPid = (pid: number) => procs.find((p) => p.pid === pid);
 
   // Keyboard navigation: Up/Down move selection, Enter opens the context menu.
   function onKeyDown(e: React.KeyboardEvent) {
@@ -47,6 +53,16 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
         const r = row.getBoundingClientRect();
         setMenu({ pid: selectedPid, x: r.left, y: r.bottom });
       }
+    }
+  }
+
+  async function copy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      window.setTimeout(() => setCopied(null), 1200);
+    } catch {
+      /* clipboard may be unavailable; ignore */
     }
   }
 
@@ -82,6 +98,7 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
       <div className="section-head">
         <span className="section-title">
           <IconProcess size={13} /> Processes
+          {q && <span className="proc-count">{sorted.length}/{procs.length}</span>}
         </span>
         <div className="sort">
           {(["cpu", "mem", "name"] as const).map((k) => (
@@ -97,11 +114,30 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
         </div>
       </div>
 
+      <div className="proc-search">
+        <IconSearch size={13} />
+        <input
+          type="text"
+          value={query}
+          placeholder="Filter processes…"
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Filter processes"
+          onKeyDown={(e) => e.stopPropagation()}
+        />
+        {query && (
+          <button className="proc-search-clear" onClick={() => setQuery("")} aria-label="Clear filter" title="Clear">
+            &#10005;
+          </button>
+        )}
+      </div>
+
       <div className="proc-head">
         <span>Process</span>
         <span className="num">CPU</span>
         <span className="num">Memory</span>
       </div>
+
+      {sorted.length === 0 && <div className="empty">No matches.</div>}
 
       {sorted.map((p) => (
         <div
@@ -140,6 +176,13 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
             role="menu"
           >
             <button
+              className="ctx-item ctx-danger"
+              role="menuitem"
+              onClick={() => endTask(byPid(menu.pid))}
+            >
+              <IconClose size={14} /> End task
+            </button>
+            <button
               className="ctx-item"
               role="menuitem"
               disabled={!byPid(menu.pid)?.exe}
@@ -147,13 +190,30 @@ export function ProcList({ procs, sortKey, onSort, selectedPid, onSelect }: Prop
             >
               <IconFolder size={14} /> Open file location
             </button>
+            <div className="ctx-sep" />
             <button
-              className="ctx-item ctx-danger"
+              className="ctx-item"
               role="menuitem"
-              onClick={() => endTask(byPid(menu.pid))}
+              onClick={() => {
+                const p = byPid(menu.pid);
+                if (p) copy(`${p.name} (PID ${p.pid}) — CPU ${p.cpu.toFixed(1)}% · ${fmtSize(p.mem)}`, "info");
+                setMenu(null);
+              }}
             >
-              <IconClose size={14} /> End task
+              <IconCopy size={14} /> Copy details
             </button>
+            <button
+              className="ctx-item"
+              role="menuitem"
+              onClick={() => {
+                const p = byPid(menu.pid);
+                if (p) copy(String(p.pid), "pid");
+                setMenu(null);
+              }}
+            >
+              <IconCopy size={14} /> Copy PID
+            </button>
+            {copied && <div className="ctx-copied">Copied {copied}</div>}
           </div>
         </>
       )}

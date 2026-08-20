@@ -1,4 +1,5 @@
 import type { Note } from "../types";
+import { IconNotes, IconPlus } from "./icons";
 
 interface Props {
   notes: Note[];
@@ -12,7 +13,9 @@ export function NotesStrip({ notes, text, onText, onAdd, onDelete }: Props) {
   return (
     <section className="section">
       <div className="section-head">
-        <span className="section-title">Notes</span>
+        <span className="section-title">
+          <IconNotes size={13} /> Notes
+        </span>
       </div>
       <div className="note-input">
         <input
@@ -22,8 +25,8 @@ export function NotesStrip({ notes, text, onText, onAdd, onDelete }: Props) {
           onKeyDown={(e) => e.key === "Enter" && onAdd()}
           aria-label="New note"
         />
-        <button className="btn btn-add" onClick={onAdd}>
-          Add
+        <button className="btn btn-add" onClick={onAdd} title="Add note" aria-label="Add note">
+          <IconPlus size={14} />
         </button>
       </div>
       {notes.length === 0 ? (
@@ -33,7 +36,12 @@ export function NotesStrip({ notes, text, onText, onAdd, onDelete }: Props) {
           {notes.map((n) => (
             <li key={n.id}>
               <span className="note-text">{n.text}</span>
-              <button className="x" onClick={() => onDelete(n.id)} title="delete" aria-label="Delete note">
+              <button
+                className="x"
+                onClick={() => onDelete(n.id)}
+                title="delete"
+                aria-label="Delete note"
+              >
                 ×
               </button>
             </li>

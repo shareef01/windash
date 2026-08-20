@@ -1,4 +1,5 @@
 import { usageColor } from "../theme";
+import { IconCpu } from "./icons";
 
 interface Props {
   label: string;
@@ -6,14 +7,16 @@ interface Props {
   sub?: string;
 }
 
-// Compact stat tile: label + big value + progress bar. No oversized ring.
+// Compact stat tile: icon + label + big value + gradient progress bar.
 export function Gauge({ label, value, sub }: Props) {
   const v = Math.max(0, Math.min(100, value));
   const c = usageColor(v);
   return (
     <div className="stat">
       <div className="stat-top">
-        <span className="stat-label">{label}</span>
+        <span className="stat-label">
+          <IconCpu size={13} /> {label}
+        </span>
         <span className="stat-val" style={{ color: c }}>
           {v.toFixed(0)}
           <span className="stat-unit">%</span>

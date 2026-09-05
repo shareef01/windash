@@ -3,7 +3,7 @@ name = "windash"
 version = "0.1.0"
 description = "Personal Windows system dashboard — system stats, quick actions, notes strip."
 authors = ["shareef01"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 repository = "https://github.com/shareef01/windash"
 

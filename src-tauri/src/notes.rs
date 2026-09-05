@@ -41,11 +41,11 @@ impl NotesStore {
             fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
         }
         if !self.path.exists() {
-            fs::write(
+            crate::persist::atomic_write(
                 &self.path,
-                serde_json::to_string_pretty(&NotesData::default()).unwrap(),
-            )
-            .map_err(|e| format!("write: {}", e))?;
+                &serde_json::to_string_pretty(&NotesData::default())
+                    .map_err(|e| format!("serialize: {e}"))?,
+            )?;
         }
         Ok(())
     }
@@ -65,9 +65,10 @@ impl NotesStore {
     }
 
     fn save(&self, data: &NotesData) -> Result<(), String> {
-        fs::write(&self.path, serde_json::to_string_pretty(data).unwrap())
-            .map_err(|e| format!("write: {}", e))?;
-        Ok(())
+        crate::persist::atomic_write(
+            &self.path,
+            &serde_json::to_string_pretty(data).map_err(|e| format!("serialize: {e}"))?,
+        )
     }
 
     /// List all notes, newest first.
@@ -80,7 +81,17 @@ impl NotesStore {
 
     /// Add a new note and persist.
     pub fn add(&self, text: &str) -> Result<Note, String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("Note is empty.".into());
+        }
+        if text.chars().count() > 500 {
+            return Err("Note is too long (500 character limit).".into());
+        }
         let mut data = self.load()?;
+        if data.notes.len() >= 200 {
+            return Err("Too many notes.".into());
+        }
         let id = data.next_id;
         data.next_id += 1;
 
@@ -104,5 +115,30 @@ impl NotesStore {
         }
         self.save(&data)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_note_serialization() {
+        let note = Note {
+            id: 1,
+            text: "Hello Windash".into(),
+            created_at: "2026-08-25T00:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&note).unwrap();
+        let deserialized: Note = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, 1);
+        assert_eq!(deserialized.text, "Hello Windash");
+    }
+
+    #[test]
+    fn test_notes_data_default() {
+        let data = NotesData::default();
+        assert!(data.notes.is_empty());
+        assert_eq!(data.next_id, 0);
     }
 }

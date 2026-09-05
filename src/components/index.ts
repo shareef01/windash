@@ -7,3 +7,4 @@ export { NotesStrip } from "./NotesStrip";
 export { QuickActions } from "./QuickActions";
 export { DockBar } from "./DockBar";
 export { SettingsPanel } from "./SettingsPanel";
+export { ErrorBanner } from "./ErrorBanner";

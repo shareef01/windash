@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct WindowGeom {
     pub x: i32,
     pub y: i32,
@@ -52,8 +52,10 @@ impl GeomStore {
                     height: 720,
                 },
             );
-            fs::write(&self.path, serde_json::to_string_pretty(&map).unwrap())
-                .map_err(|e| format!("write: {}", e))?;
+            crate::persist::atomic_write(
+                &self.path,
+                &serde_json::to_string_pretty(&map).map_err(|e| format!("serialize: {e}"))?,
+            )?;
         }
         Ok(())
     }
@@ -79,30 +81,79 @@ impl GeomStore {
 
     pub fn get(&self, edge: &str) -> WindowGeom {
         let map = self.load_map();
-        if let Some(g) = map.get(edge) {
-            return g.clone();
-        }
-        // Fall back to "none" if this edge has no saved geometry yet.
-        if edge != "none" {
+        let mut g = if let Some(g) = map.get(edge) {
+            g.clone()
+        } else if edge != "none" {
             if let Some(g) = map.get("none") {
-                return g.clone();
+                g.clone()
+            } else {
+                WindowGeom {
+                    x: 200,
+                    y: 100,
+                    width: 390,
+                    height: 720,
+                }
             }
-        }
-        // Repair / first-run default.
-        let g = WindowGeom {
-            x: 200,
-            y: 100,
-            width: 390,
-            height: 720,
+        } else {
+            WindowGeom {
+                x: 200,
+                y: 100,
+                width: 390,
+                height: 720,
+            }
         };
-        let _ = self.set(edge, &g);
+        // Sanity clamp so a bad geometry can never throw the window off-screen or blow up
+        g.width = g.width.clamp(280, 720);
+        g.height = g.height.clamp(440, 1000);
+        if g.x < 0 || g.x > 3840 {
+            g.x = 200;
+        }
+        if g.y < 0 || g.y > 2160 {
+            g.y = 100;
+        }
         g
     }
 
     pub fn set(&self, edge: &str, geom: &WindowGeom) -> Result<(), String> {
         let mut map = self.load_map();
-        map.insert(edge.to_string(), geom.clone());
-        fs::write(&self.path, serde_json::to_string_pretty(&map).unwrap())
-            .map_err(|e| format!("write: {}", e))
+        let sanitized = WindowGeom {
+            x: geom.x.clamp(0, 3840),
+            y: geom.y.clamp(0, 2160),
+            width: geom.width.clamp(280, 720),
+            height: geom.height.clamp(440, 1000),
+        };
+        if map.get(edge) == Some(&sanitized) {
+            return Ok(());
+        }
+        map.insert(edge.to_string(), sanitized.clone());
+        crate::persist::atomic_write(
+            &self.path,
+            &serde_json::to_string_pretty(&map).map_err(|e| format!("serialize: {e}"))?,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_window_geom_default() {
+        let g = WindowGeom::default();
+        assert_eq!(g.x, 0);
+        assert_eq!(g.y, 0);
+        assert_eq!(g.width, 0);
+        assert_eq!(g.height, 0);
+    }
+
+    #[test]
+    fn test_geom_map_deserialization() {
+        let json = r#"{"none": {"x": 200, "y": 100, "width": 390, "height": 720}}"#;
+        let map: GeomMap = serde_json::from_str(json).unwrap();
+        let g = map.get("none").unwrap();
+        assert_eq!(g.x, 200);
+        assert_eq!(g.y, 100);
+        assert_eq!(g.width, 390);
+        assert_eq!(g.height, 720);
     }
 }

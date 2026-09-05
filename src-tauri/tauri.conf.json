@@ -17,23 +17,19 @@
         "label": "main",
         "width": 390,
         "height": 720,
-        "minWidth": 300,
+        "minWidth": 280,
         "minHeight": 440,
         "resizable": true,
         "fullscreen": false,
-        "center": false,
+        "center": true,
         "decorations": false,
         "alwaysOnTop": true,
-        "transparent": true,
+        "transparent": false,
+        "visible": true,
         "skipTaskbar": false,
         "shadow": true
       }
-    ],
-    "trayIcon": {
-      "id": "windash-tray",
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
-    }
+    ]
   },
   "bundle": {
     "active": true,

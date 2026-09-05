@@ -23,6 +23,8 @@ pub struct SystemMetrics {
     /// Real wall-clock interval between the two most recent refreshes. Used to
     /// convert raw network deltas into accurate bytes-per-second rates.
     interval: Duration,
+    /// Disk space changes slowly; refresh every N ticks instead of every poll.
+    disk_tick: u8,
 }
 
 impl SystemMetrics {
@@ -38,6 +40,7 @@ impl SystemMetrics {
             disks,
             last_update: Instant::now(),
             interval: Duration::from_secs(2),
+            disk_tick: 0,
         }
     }
 
@@ -48,6 +51,10 @@ impl SystemMetrics {
         self.last_update = Instant::now();
         self.system.refresh_all();
         self.networks.refresh_list();
+        if self.disk_tick % 5 == 0 {
+            self.disks.refresh();
+        }
+        self.disk_tick = self.disk_tick.wrapping_add(1);
     }
 
     /// Seconds covered by the most recent refresh interval, clamped to a sane
@@ -123,7 +130,7 @@ impl SystemMetrics {
         let secs = self.elapsed_secs();
         let mut rx_delta: u64 = 0;
         let mut tx_delta: u64 = 0;
-        for (_name, net) in self.networks.iter() {
+        for net in self.networks.values() {
             rx_delta += net.received();
             tx_delta += net.transmitted();
         }
@@ -231,4 +238,28 @@ pub struct ProcInfo {
     pub pid: u64,
     /// Absolute path to the executable (may be empty for some system processes).
     pub exe: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_elapsed_secs_clamping() {
+        let mut m = SystemMetrics {
+            system: System::new(),
+            networks: Networks::new(),
+            disks: Disks::new(),
+            last_update: Instant::now(),
+            interval: Duration::from_secs(0),
+            disk_tick: 0,
+        };
+        assert_eq!(m.elapsed_secs(), 1.0);
+
+        m.interval = Duration::from_secs(5);
+        assert_eq!(m.elapsed_secs(), 5.0);
+
+        m.interval = Duration::from_secs(120);
+        assert_eq!(m.elapsed_secs(), 1.0);
+    }
 }

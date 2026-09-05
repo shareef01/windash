@@ -7,6 +7,7 @@ mod dock;
 mod geom;
 mod metrics;
 mod notes;
+mod persist;
 mod settings;
 
 use dock::DockStore;
@@ -29,6 +30,8 @@ struct AppState {
     dock: Mutex<DockStore>,
     geom: Mutex<GeomStore>,
     settings: Mutex<SettingsStore>,
+    #[allow(dead_code)]
+    tray: Mutex<Option<tauri::tray::TrayIcon>>,
 }
 
 pub fn run() {
@@ -37,66 +40,22 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(
-            tauri_plugin_single_instance::init(|app, _args, _cwd| {
-                // A second launch must NOT start another monitoring loop — just
-                // bring the existing window to the front. This prevents multiple
-                // sysinfo pollers from running at once (which would spike CPU).
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
-            }),
-        )
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second launch must NOT start another monitoring loop — just
+            // bring the existing window to the front. This prevents multiple
+            // sysinfo pollers from running at once (which would spike CPU).
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
             let metrics = SystemMetrics::new();
             let notes = NotesStore::new(app.handle())?;
             let dock_store = DockStore::new(app.handle())?;
             let geom_store = GeomStore::new(app.handle())?;
             let settings = SettingsStore::new(app.handle())?;
-            let state = AppState {
-                metrics: Mutex::new(metrics),
-                notes: Mutex::new(notes),
-                dock: Mutex::new(dock_store),
-                geom: Mutex::new(geom_store),
-                settings: Mutex::new(settings),
-            };
-            app.manage(state);
-
-            // Global show/hide shortcut: Ctrl+Shift+D toggles the window.
-            // Registered from Rust so it works even when the window is hidden
-            // (the frontend cannot listen while hidden).
-            if let Err(e) =
-                app.global_shortcut()
-                    .on_shortcut("CmdOrCtrl+Shift+D", |app, _shortcut, event| {
-                        // Only act on key press, not release (avoids double-toggle).
-                        if event.state != tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                            return;
-                        }
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                let _ = window.unminimize();
-                            }
-                        }
-                    })
-            {
-                log::error!("failed to register global shortcut: {e}");
-            }
-
-            // Apply saved dock + always-on-top to the main window once it exists.
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let cfg = app.state::<AppState>().dock.lock().unwrap().get();
-                let _ = dock::apply_dock(&window, &cfg);
-                let s = app.state::<AppState>().settings.lock().unwrap().get();
-                let _ = window.set_always_on_top(s.always_on_top);
-            }
-
             // System tray
             let quit_item = MenuItem::with_id(app, "quit", "Quit Windash", true, None::<&str>)?;
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
@@ -111,9 +70,10 @@ pub fn run() {
             let icon_bytes = include_bytes!("../icons/icon.png");
             let icon = Image::from_bytes(icon_bytes).expect("icon.png parse");
 
-            let _tray = TrayIconBuilder::new()
+            let tray = TrayIconBuilder::with_id("windash-tray")
                 .icon(icon)
                 .menu(&menu)
+                .show_menu_on_left_click(false)
                 .tooltip("Windash — system dashboard")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
@@ -122,6 +82,7 @@ pub fn run() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
+                            let _ = window.unminimize();
                             let _ = window.set_focus();
                         }
                     }
@@ -142,29 +103,89 @@ pub fn run() {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
+                            let _ = window.unminimize();
                             let _ = window.set_focus();
                         }
                     }
                 })
                 .build(app)?;
 
+            let state = AppState {
+                metrics: Mutex::new(metrics),
+                notes: Mutex::new(notes),
+                dock: Mutex::new(dock_store),
+                geom: Mutex::new(geom_store),
+                settings: Mutex::new(settings),
+                tray: Mutex::new(Some(tray)),
+            };
+            app.manage(state);
+
+            // Global show/hide shortcut: Ctrl+Shift+D toggles the window.
+            // Registered from Rust so it works even when the window is hidden
+            // (the frontend cannot listen while hidden).
+            if let Err(e) =
+                app.global_shortcut()
+                    .on_shortcut("CmdOrCtrl+Shift+D", |app, _shortcut, event| {
+                        // Only act on key press, not release (avoids double-toggle).
+                        if event.state != tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                            return;
+                        }
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    })
+            {
+                log::error!("failed to register global shortcut: {e}");
+            }
+
+            // Apply saved dock + always-on-top to the main window once it exists.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+                if let Ok(dock_guard) = app.state::<AppState>().dock.lock() {
+                    let cfg = dock_guard.get();
+                    drop(dock_guard);
+                    let _ = dock::apply_dock(&window, &cfg);
+                }
+                if let Ok(settings_guard) = app.state::<AppState>().settings.lock() {
+                    let s = settings_guard.get();
+                    drop(settings_guard);
+                    let _ = window.set_always_on_top(s.always_on_top);
+                }
+            }
+
             // Restore floating geometry (only meaningful when not docked).
             if let Some(window) = app.get_webview_window("main") {
-                let dock_cfg = app.state::<AppState>().dock.lock().unwrap().get();
-                if dock_cfg.edge() == dock::DockEdge::None {
-                    let g = app.state::<AppState>().geom.lock().unwrap().get("none");
-                    use tauri::{LogicalPosition, LogicalSize};
-                    let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
-                    let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
-                    // Tell the frontend the actual window width so the responsive
-                    // layout mode matches the restored geometry.
-                    let _ = window.emit(
-                        "windash://resized",
-                        serde_json::json!({
-                            "width": g.width as f64,
-                            "height": g.height as f64,
-                        }),
-                    );
+                let dock_edge = app
+                    .state::<AppState>()
+                    .dock
+                    .lock()
+                    .map(|d| d.get().edge())
+                    .unwrap_or(dock::DockEdge::None);
+                if dock_edge == dock::DockEdge::None {
+                    if let Ok(geom_guard) = app.state::<AppState>().geom.lock() {
+                        let g = geom_guard.get("none");
+                        drop(geom_guard);
+                        use tauri::{LogicalPosition, LogicalSize};
+                        let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
+                        let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
+                        // Tell the frontend the actual window width so the responsive
+                        // layout mode matches the restored geometry.
+                        let _ = window.emit(
+                            "windash://resized",
+                            serde_json::json!({
+                                "width": g.width as f64,
+                                "height": g.height as f64,
+                            }),
+                        );
+                    }
                 }
             }
 
@@ -192,7 +213,10 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Moved(_pos) => {
                 let state = window.state::<AppState>();
-                let edge = { state.dock.lock().unwrap().get().edge };
+                let edge = match state.dock.lock() {
+                    Ok(guard) => guard.get().edge,
+                    Err(_) => return,
+                };
                 // The event gives a `&Window`; get the `WebviewWindow` for the
                 // docking helpers.
                 let wv = match window.get_webview_window("main") {
@@ -203,19 +227,24 @@ pub fn run() {
                     // Docked: re-snap to the *current* monitor so dragging the
                     // window (or moving it across mixed-DPI displays) keeps it
                     // glued to the correct edge at the right scale.
-                    let cfg = state.dock.lock().unwrap().get();
-                    let _ = dock::apply_dock(&wv, &cfg);
+                    if let Ok(guard) = state.dock.lock() {
+                        let cfg = guard.get();
+                        let _ = dock::apply_dock(&wv, &cfg);
+                    }
                     return;
                 }
                 // Floating: persist geometry (keyed by edge) on every move.
                 if let (Ok(pos), Ok(outer)) = (wv.outer_position(), wv.outer_size()) {
+                    let scale = wv.scale_factor().unwrap_or(1.0);
                     let g = geom::WindowGeom {
-                        x: pos.x,
-                        y: pos.y,
-                        width: outer.width,
-                        height: outer.height,
+                        x: (pos.x as f64 / scale) as i32,
+                        y: (pos.y as f64 / scale) as i32,
+                        width: (outer.width as f64 / scale) as u32,
+                        height: (outer.height as f64 / scale) as u32,
                     };
-                    let _ = state.geom.lock().unwrap().set("none", &g);
+                    if let Ok(geom_guard) = state.geom.lock() {
+                        let _ = geom_guard.set("none", &g);
+                    }
                 }
                 if let Some(detected) = dock::detect_edge(&wv) {
                     let d = match detected {
@@ -224,14 +253,15 @@ pub fn run() {
                         dock::DockEdge::None => "none".to_string(),
                     };
                     // Snap + persist.
-                    let store = state.dock.lock().unwrap();
-                    let mut cfg = store.get();
-                    cfg.edge = d.clone();
-                    let _ = store.set(&cfg);
-                    drop(store);
-                    let _ = dock::apply_dock(&wv, &cfg);
-                    // Tell the frontend the dock mode changed.
-                    let _ = window.emit("windash://dock", d);
+                    if let Ok(store) = state.dock.lock() {
+                        let mut cfg = store.get();
+                        cfg.edge = d.clone();
+                        let _ = store.set(&cfg);
+                        drop(store);
+                        let _ = dock::apply_dock(&wv, &cfg);
+                        // Tell the frontend the dock mode changed.
+                        let _ = window.emit("windash://dock", d);
+                    }
                 }
             }
             tauri::WindowEvent::Focused(focused) => {
@@ -253,15 +283,22 @@ pub fn run() {
                 );
                 // Persist floating geometry (size) when not docked.
                 let st = window.state::<AppState>();
-                if st.dock.lock().unwrap().get().edge() == dock::DockEdge::None {
+                let is_floating = st
+                    .dock
+                    .lock()
+                    .map(|d| d.get().edge() == dock::DockEdge::None)
+                    .unwrap_or(false);
+                if is_floating {
                     if let (Ok(pos), Ok(outer)) = (window.outer_position(), window.outer_size()) {
                         let g = geom::WindowGeom {
-                            x: pos.x,
-                            y: pos.y,
-                            width: outer.width,
-                            height: outer.height,
+                            x: (pos.x as f64 / scale) as i32,
+                            y: (pos.y as f64 / scale) as i32,
+                            width: (outer.width as f64 / scale) as u32,
+                            height: (outer.height as f64 / scale) as u32,
                         };
-                        let _ = st.geom.lock().unwrap().set("none", &g);
+                        if let Ok(geom_guard) = st.geom.lock() {
+                            let _ = geom_guard.set("none", &g);
+                        }
                     }
                 }
             }
@@ -270,10 +307,17 @@ pub fn run() {
             // the current monitor so it stays correctly placed and sized.
             tauri::WindowEvent::ScaleFactorChanged { .. } | tauri::WindowEvent::ThemeChanged(_) => {
                 let state = window.state::<AppState>();
-                if state.dock.lock().unwrap().get().edge() != dock::DockEdge::None {
+                let is_docked = state
+                    .dock
+                    .lock()
+                    .map(|d| d.get().edge() != dock::DockEdge::None)
+                    .unwrap_or(false);
+                if is_docked {
                     if let Some(wv) = window.get_webview_window("main") {
-                        let cfg = state.dock.lock().unwrap().get();
-                        let _ = dock::apply_dock(&wv, &cfg);
+                        if let Ok(dock_guard) = state.dock.lock() {
+                            let cfg = dock_guard.get();
+                            let _ = dock::apply_dock(&wv, &cfg);
+                        }
                     }
                 }
             }
@@ -301,7 +345,7 @@ fn get_metrics(
 #[tauri::command]
 fn get_notes(out: tauri::State<'_, AppState>) -> Result<Vec<notes::Note>, String> {
     let notes = out.notes.lock().map_err(|e| e.to_string())?;
-    Ok(notes.list().map_err(|e| e.to_string())?)
+    notes.list().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -355,8 +399,20 @@ fn open_explorer(pid: Option<u64>, out: tauri::State<'_, AppState>) -> Result<()
 #[tauri::command]
 fn windows_search(query: Option<String>) -> Result<(), String> {
     let target = match query {
-        Some(q) if !q.trim().is_empty() => format!("search-ms:query={}", q.trim()),
-        _ => "search-ms:".into(),
+        Some(q) => {
+            let trimmed = q.trim();
+            if !trimmed.is_empty() {
+                // Strip control characters and double quotes to prevent parameter confusion
+                let clean: String = trimmed
+                    .chars()
+                    .filter(|c| !c.is_control() && *c != '"')
+                    .collect();
+                format!("search-ms:query={}", clean)
+            } else {
+                "search-ms:".into()
+            }
+        }
+        None => "search-ms:".into(),
     };
     #[cfg(target_os = "windows")]
     {
@@ -382,6 +438,18 @@ fn windows_search(query: Option<String>) -> Result<(), String> {
 /// a clear error rather than a silent no-op.
 #[tauri::command]
 fn end_process(pid: u64) -> Result<(), String> {
+    // Guard against terminating critical system PIDs or own process
+    let current_pid = std::process::id() as u64;
+    if pid == 0 || pid == 4 {
+        return Err(format!(
+            "Process {} is a protected Windows system process and cannot be terminated.",
+            pid
+        ));
+    }
+    if pid == current_pid {
+        return Err("Cannot terminate Windash process from within itself.".into());
+    }
+
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -427,8 +495,14 @@ fn update_settings(
         .map_err(|e| e.to_string())?
         .update(patch)
         .map_err(|e| e.to_string())?;
-    // Apply the always-on-top side-effect immediately.
+    // Apply the always-on-top side-effect immediately, and keep dock config in sync
+    // so a later snap/dock doesn't restore a stale always-on-top flag.
     let _ = window.set_always_on_top(s.always_on_top);
+    if let Ok(dock) = out.dock.lock() {
+        let mut cfg = dock.get();
+        cfg.always_on_top = s.always_on_top;
+        let _ = dock.set(&cfg);
+    }
     Ok(s)
 }
 
@@ -467,11 +541,7 @@ fn get_system_theme() -> String {
             // Parse the hex value after "0x" robustly.
             if let Some(idx) = text.find("0x") {
                 if let Ok(val) = u32::from_str_radix(
-                    text[idx + 2..]
-                        .trim()
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("0"),
+                    text[idx + 2..].split_whitespace().next().unwrap_or("0"),
                     16,
                 ) {
                     return if val == 0 {
@@ -491,26 +561,29 @@ fn get_system_theme() -> String {
     }
 }
 
-/// Remove native window chrome and apply a modern Windows 11 backdrop.
-/// Uses Mica (the system-drawn titlebar material) when available on Windows 11,
-/// falling back to a frosted acrylic/blur for older builds. Must run after the
-/// window is fully created (i.e. from the frontend after mount).
+/// Remove native window chrome and apply a Windows 11 backdrop when enabled.
+/// `dark` should match the effective UI theme so Mica is not forced to dark
+/// while the webview is in light mode. If Mica is unavailable, skip blur —
+/// CSS surfaces are more reliable than a hard-coded dark acrylic tint.
 #[tauri::command]
 fn apply_immersive(
+    dark: Option<bool>,
     window: tauri::WebviewWindow,
     out: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let _ = window.set_decorations(false);
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::{apply_blur, apply_mica};
-        // Mica on Windows 11 (system-drawn titlebar material) when enabled;
-        // always apply blur as the base material + rounded-corner fallback.
-        let mica = out.settings.lock().unwrap().get().mica_enabled;
+        use window_vibrancy::apply_mica;
+        let mica = out
+            .settings
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get()
+            .mica_enabled;
         if mica {
-            let _ = apply_mica(&window, Some(true));
+            let _ = apply_mica(&window, Some(dark.unwrap_or(true)));
         }
-        let _ = apply_blur(&window, Some((18, 18, 22, 255)));
     }
     Ok(())
 }
@@ -521,9 +594,16 @@ fn set_dock(
     out: tauri::State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<dock::DockConfig, String> {
+    let always_on_top = out
+        .settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get()
+        .always_on_top;
     let store = out.dock.lock().map_err(|e| e.to_string())?;
     let mut cfg = store.get();
     cfg.edge = edge;
+    cfg.always_on_top = always_on_top;
     store.set(&cfg)?;
     drop(store);
     dock::apply_dock(&window, &cfg)?;
@@ -531,7 +611,7 @@ fn set_dock(
     // When un-docking, restore the saved floating geometry (size + position)
     // so the window doesn't stay a full-height sidebar shape.
     if cfg.edge() == dock::DockEdge::None {
-        let g = out.geom.lock().unwrap().get("none");
+        let g = out.geom.lock().map_err(|e| e.to_string())?.get("none");
         use tauri::{LogicalPosition, LogicalSize};
         let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
         let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));

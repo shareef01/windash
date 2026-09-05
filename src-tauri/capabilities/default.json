@@ -5,6 +5,13 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/shareef01/windash" },
+        { "url": "https://github.com/shareef01/windash/*" }
+      ]
+    }
   ]
 }

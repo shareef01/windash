@@ -10,13 +10,22 @@ export const colors = {
   muted: "var(--muted)",
 } as const;
 
+export type UsageTone = "normal" | "elevated" | "high";
+
 /**
  * Semantic color for a 0..100 utilization value.
- * Calm by default (accent), warming to amber then red as it gets busy.
+ * Stay calm through ordinary load; warn only when the machine is actually busy.
  */
+export function usageTone(pct: number): UsageTone {
+  if (pct >= 90) return "high";
+  if (pct >= 75) return "elevated";
+  return "normal";
+}
+
 export function usageColor(pct: number): string {
-  if (pct >= 85) return colors.red;
-  if (pct >= 60) return colors.amber;
+  const t = usageTone(pct);
+  if (t === "high") return colors.red;
+  if (t === "elevated") return colors.amber;
   return colors.accent;
 }
 
@@ -25,8 +34,8 @@ export function usageColor(pct: number): string {
  * busy core reads 100%; keep the warm threshold higher than the resource tiles.
  */
 export function cpuColor(cpu: number): string {
-  if (cpu >= 50) return colors.red;
-  if (cpu >= 15) return colors.amber;
+  if (cpu >= 70) return colors.red;
+  if (cpu >= 30) return colors.amber;
   return colors.accent;
 }
 

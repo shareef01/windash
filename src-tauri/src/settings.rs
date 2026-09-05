@@ -78,8 +78,10 @@ impl SettingsStore {
             let data = SettingsData {
                 settings: Settings::default(),
             };
-            fs::write(&self.path, serde_json::to_string_pretty(&data).unwrap())
-                .map_err(|e| format!("write: {}", e))?;
+            crate::persist::atomic_write(
+                &self.path,
+                &serde_json::to_string_pretty(&data).map_err(|e| format!("serialize: {e}"))?,
+            )?;
         } else if fs::read_to_string(&self.path)
             .ok()
             .and_then(|t| serde_json::from_str::<SettingsData>(&t).ok())
@@ -92,8 +94,10 @@ impl SettingsStore {
             let data = SettingsData {
                 settings: Settings::default(),
             };
-            fs::write(&self.path, serde_json::to_string_pretty(&data).unwrap())
-                .map_err(|e| format!("write: {}", e))?;
+            crate::persist::atomic_write(
+                &self.path,
+                &serde_json::to_string_pretty(&data).map_err(|e| format!("serialize: {e}"))?,
+            )?;
         }
         Ok(())
     }
@@ -109,9 +113,10 @@ impl SettingsStore {
         let data = SettingsData {
             settings: s.clone(),
         };
-        fs::write(&self.path, serde_json::to_string_pretty(&data).unwrap())
-            .map_err(|e| format!("write: {}", e))?;
-        Ok(())
+        crate::persist::atomic_write(
+            &self.path,
+            &serde_json::to_string_pretty(&data).map_err(|e| format!("serialize: {e}"))?,
+        )
     }
 
     pub fn get(&self) -> Settings {
@@ -128,7 +133,9 @@ impl SettingsStore {
             s.refresh_ms = v.clamp(1000, 10000);
         }
         if let Some(v) = patch.theme {
-            s.theme = v;
+            if matches!(v.as_str(), "dark" | "light" | "system") {
+                s.theme = v;
+            }
         }
         if let Some(v) = patch.show_disks {
             s.show_disks = v;
@@ -146,7 +153,9 @@ impl SettingsStore {
             s.mica_enabled = v;
         }
         if let Some(v) = patch.sort_key {
-            s.sort_key = v;
+            if matches!(v.as_str(), "cpu" | "mem" | "name") {
+                s.sort_key = v;
+            }
         }
         self.save(&s)?;
         self.cache = s.clone();
@@ -165,4 +174,42 @@ pub struct SettingsPatch {
     pub show_actions: Option<bool>,
     pub mica_enabled: Option<bool>,
     pub sort_key: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_defaults() {
+        let s = Settings::default();
+        assert!(s.always_on_top);
+        assert_eq!(s.refresh_ms, 2000);
+        assert_eq!(s.theme, "system");
+        assert!(s.show_disks);
+        assert!(s.show_processes);
+        assert!(s.show_notes);
+        assert!(s.show_actions);
+        assert!(s.mica_enabled);
+        assert_eq!(s.sort_key, "cpu");
+    }
+
+    #[test]
+    fn test_settings_json_roundtrip() {
+        let s = Settings::default();
+        let json = serde_json::to_string(&s).unwrap();
+        let parsed: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.refresh_ms, 2000);
+        assert_eq!(parsed.sort_key, "cpu");
+    }
+
+    #[test]
+    fn test_unknown_fields_are_ignored() {
+        let json = r#"{"always_on_top":false,"refresh_ms":3000,"theme":"light","show_disks":false,"show_processes":true,"show_notes":true,"show_actions":true,"mica_enabled":false,"sort_key":"mem","future_field":true}"#;
+        let parsed: Settings = serde_json::from_str(json).unwrap();
+        assert!(!parsed.always_on_top);
+        assert_eq!(parsed.refresh_ms, 3000);
+        assert_eq!(parsed.theme, "light");
+        assert_eq!(parsed.sort_key, "mem");
+    }
 }

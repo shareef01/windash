@@ -56,3 +56,8 @@ export interface Settings {
 }
 
 export type SortKey = "cpu" | "mem" | "name";
+
+export interface NetSample {
+  rx: number;
+  tx: number;
+}

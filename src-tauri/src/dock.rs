@@ -58,12 +58,14 @@ impl DockStore {
         }
         if !self.path.exists() {
             let default = DockConfig {
-                edge: "right".to_string(),
+                edge: "none".to_string(),
                 width: 390,
                 always_on_top: true,
             };
-            fs::write(&self.path, serde_json::to_string_pretty(&default).unwrap())
-                .map_err(|e| format!("write: {}", e))?;
+            crate::persist::atomic_write(
+                &self.path,
+                &serde_json::to_string_pretty(&default).map_err(|e| format!("serialize: {e}"))?,
+            )?;
         }
         Ok(())
     }
@@ -75,7 +77,7 @@ impl DockStore {
             Err(_) => {
                 log::warn!("dock file corrupted, repairing: {}", self.path.display());
                 let cfg = DockConfig {
-                    edge: "right".to_string(),
+                    edge: "none".to_string(),
                     width: 390,
                     always_on_top: true,
                 };
@@ -86,8 +88,10 @@ impl DockStore {
     }
 
     fn save(&self, cfg: &DockConfig) -> Result<(), String> {
-        fs::write(&self.path, serde_json::to_string_pretty(cfg).unwrap())
-            .map_err(|e| format!("write: {}", e))
+        crate::persist::atomic_write(
+            &self.path,
+            &serde_json::to_string_pretty(cfg).map_err(|e| format!("serialize: {e}"))?,
+        )
     }
 
     pub fn get(&self) -> DockConfig {
@@ -106,7 +110,7 @@ impl DockStore {
 /// Position the window according to the dock config. Returns an error string on failure.
 pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String> {
     let edge = cfg.edge();
-    let width = cfg.width.max(280).min(640);
+    let width = cfg.width.clamp(280, 640);
 
     // Monitor geometry (physical pixels). Prefer the window's current monitor, but
     // fall back to the primary monitor (current_monitor() can be None before the
@@ -149,8 +153,7 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
             let _ = window.set_size(LogicalSize::new(width_f, m_h));
             let _ = window.set_position(LogicalPosition::new(x, m_y));
             let _ = window.set_always_on_top(cfg.always_on_top);
-            // When docked as a sidebar, skip the taskbar so it doesn't take a slot.
-            let _ = window.set_skip_taskbar(true);
+            let _ = window.set_skip_taskbar(false);
             Ok(())
         }
     }
@@ -159,6 +162,41 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
 /// How close (logical px) the window's left/right edge must be to a monitor edge
 /// before we treat a drag as an intentional dock gesture.
 const SNAP_THRESHOLD: f64 = 48.0;
+
+/// Geometry rectangle in logical coordinates.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Pure function to calculate edge snapping given monitor work area and window geometry.
+pub fn calculate_snap_edge(
+    work_area: Rect,
+    win_x: f64,
+    win_w: f64,
+    win_y: f64,
+    snap_threshold: f64,
+) -> Option<DockEdge> {
+    let dist_right = (work_area.x + work_area.width) - (win_x + win_w);
+    let dist_left = win_x - work_area.x;
+
+    if (-snap_threshold..=snap_threshold).contains(&dist_right)
+        && win_y > work_area.y - snap_threshold
+        && win_y < work_area.y + work_area.height
+    {
+        return Some(DockEdge::Right);
+    }
+    if (-snap_threshold..=snap_threshold).contains(&dist_left)
+        && win_y > work_area.y - snap_threshold
+        && win_y < work_area.y + work_area.height
+    {
+        return Some(DockEdge::Left);
+    }
+    None
+}
 
 /// Given the window's current top-left position, decide whether it should snap
 /// to the left or right edge of its current monitor. Returns None when it is not
@@ -170,10 +208,12 @@ pub fn detect_edge(window: &WebviewWindow) -> Option<DockEdge> {
     let monitor = window.current_monitor().ok().flatten()?;
     let scale = window.scale_factor().unwrap_or(1.0);
     let wa = monitor.work_area();
-    let w_w = wa.size.width as f64 / scale;
-    let w_h = wa.size.height as f64 / scale;
-    let w_x = wa.position.x as f64 / scale;
-    let w_y = wa.position.y as f64 / scale;
+    let work_area = Rect {
+        x: wa.position.x as f64 / scale,
+        y: wa.position.y as f64 / scale,
+        width: wa.size.width as f64 / scale,
+        height: wa.size.height as f64 / scale,
+    };
 
     let pos = window.outer_position().ok()?;
     let px = pos.x as f64 / scale;
@@ -181,21 +221,51 @@ pub fn detect_edge(window: &WebviewWindow) -> Option<DockEdge> {
     let size = window.outer_size().ok()?;
     let win_w = size.width as f64 / scale;
 
-    // Right edge of the window vs. right edge of the work area.
-    let dist_right = (w_x + w_w) - (px + win_w);
-    // Left edge of the window vs. left edge of the work area.
-    let dist_left = px - w_x;
+    calculate_snap_edge(work_area, px, win_w, py, SNAP_THRESHOLD)
+}
 
-    if dist_right <= SNAP_THRESHOLD && dist_right >= -SNAP_THRESHOLD {
-        // Also require the window to be reasonably tall / near the vertical span.
-        if py > w_y - SNAP_THRESHOLD && py < w_y + w_h {
-            return Some(DockEdge::Right);
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dock_edge_from_str() {
+        assert_eq!(DockEdge::from_str("left"), DockEdge::Left);
+        assert_eq!(DockEdge::from_str("right"), DockEdge::Right);
+        assert_eq!(DockEdge::from_str("none"), DockEdge::None);
+        assert_eq!(DockEdge::from_str("other"), DockEdge::None);
     }
-    if dist_left <= SNAP_THRESHOLD && dist_left >= -SNAP_THRESHOLD {
-        if py > w_y - SNAP_THRESHOLD && py < w_y + w_h {
-            return Some(DockEdge::Left);
-        }
+
+    #[test]
+    fn test_dock_config_default() {
+        let cfg = DockConfig::default();
+        assert_eq!(cfg.edge(), DockEdge::None);
     }
-    None
+
+    #[test]
+    fn test_calculate_snap_edge() {
+        // Monitor: 1920x1080 at (0,0)
+        let wa = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+        // Window width: 390
+        // Near right edge: win_x = 1920 - 390 = 1530
+        let right_snap = calculate_snap_edge(wa, 1520.0, 390.0, 100.0, 48.0);
+        assert_eq!(right_snap, Some(DockEdge::Right));
+
+        // Near left edge: win_x = 10
+        let left_snap = calculate_snap_edge(wa, 10.0, 390.0, 100.0, 48.0);
+        assert_eq!(left_snap, Some(DockEdge::Left));
+
+        // In the middle: win_x = 800
+        let mid = calculate_snap_edge(wa, 800.0, 390.0, 100.0, 48.0);
+        assert_eq!(mid, None);
+
+        // Near right edge but too far above the monitor
+        let too_high = calculate_snap_edge(wa, 1530.0, 390.0, -100.0, 48.0);
+        assert_eq!(too_high, None);
+    }
 }

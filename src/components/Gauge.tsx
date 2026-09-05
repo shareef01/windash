@@ -1,31 +1,41 @@
-import { usageColor } from "../theme";
+import { usageColor, usageTone } from "../theme";
 import { IconCpu } from "./icons";
 
 interface Props {
-  label: string;
-  value: number; // 0..100
-  sub?: string;
+  value: number | null;
+  cores?: number;
 }
 
-// Compact stat tile: icon + label + big value + gradient progress bar.
-export function Gauge({ label, value, sub }: Props) {
-  const v = Math.max(0, Math.min(100, value));
-  const c = usageColor(v);
+export function Gauge({ value, cores }: Props) {
+  const loading = value == null;
+  const v = loading ? 0 : Math.max(0, Math.min(100, value));
+  const c = loading ? "var(--text-tertiary)" : usageColor(v);
+  const tone = loading ? "unknown" : usageTone(v);
   return (
     <div className="stat">
       <div className="stat-top">
         <span className="stat-label">
-          <IconCpu size={13} /> {label}
+          <IconCpu size={14} /> CPU
         </span>
         <span className="stat-val" style={{ color: c }}>
-          {v.toFixed(0)}
+          {loading ? "—" : v.toFixed(0)}
           <span className="stat-unit">%</span>
         </span>
       </div>
-      <div className="track">
-        <div className="fill" style={{ width: `${v}%`, background: c }} />
+      <div
+        className="track"
+        role="progressbar"
+        aria-label="CPU utilization"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={loading ? undefined : Math.round(v)}
+        aria-valuetext={loading ? "Collecting" : `${Math.round(v)} percent, ${tone}`}
+      >
+        <div className="fill" style={{ width: loading ? "0%" : `${v}%`, background: c }} />
       </div>
-      {sub && <div className="stat-sub">{sub}</div>}
+      <div className="stat-sub">
+        {loading ? "Collecting…" : cores != null ? `${cores} cores` : "\u00a0"}
+      </div>
     </div>
   );
 }

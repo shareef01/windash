@@ -2,31 +2,31 @@ import { describe, it, expect } from "vitest";
 import { usageColor, cpuColor, fmtRate, fmtSize, colors } from "./theme";
 
 describe("usageColor", () => {
-  it("is accent (calm) below 60%", () => {
+  it("is accent (calm) through ordinary utilization", () => {
     expect(usageColor(0)).toBe(colors.accent);
-    expect(usageColor(59.9)).toBe(colors.accent);
+    expect(usageColor(74.9)).toBe(colors.accent);
   });
-  it("is amber from 60% to just below 85%", () => {
-    expect(usageColor(60)).toBe(colors.amber);
-    expect(usageColor(84.9)).toBe(colors.amber);
+  it("is amber from 75% to just below 90%", () => {
+    expect(usageColor(75)).toBe(colors.amber);
+    expect(usageColor(89.9)).toBe(colors.amber);
   });
-  it("is red at/above 85%", () => {
-    expect(usageColor(85)).toBe(colors.red);
+  it("is red at/above 90%", () => {
+    expect(usageColor(90)).toBe(colors.red);
     expect(usageColor(100)).toBe(colors.red);
   });
 });
 
 describe("cpuColor", () => {
-  it("is accent below 15%", () => {
+  it("is accent below 30%", () => {
     expect(cpuColor(0)).toBe(colors.accent);
-    expect(cpuColor(14.9)).toBe(colors.accent);
+    expect(cpuColor(29.9)).toBe(colors.accent);
   });
-  it("is amber 15% to just below 50%", () => {
-    expect(cpuColor(15)).toBe(colors.amber);
-    expect(cpuColor(49.9)).toBe(colors.amber);
+  it("is amber 30% to just below 70%", () => {
+    expect(cpuColor(30)).toBe(colors.amber);
+    expect(cpuColor(69.9)).toBe(colors.amber);
   });
-  it("is red at/above 50% (single busy core can read 100%+)", () => {
-    expect(cpuColor(50)).toBe(colors.red);
+  it("is red at/above 70% (single busy core can read 100%+)", () => {
+    expect(cpuColor(70)).toBe(colors.red);
     expect(cpuColor(128.9)).toBe(colors.red);
   });
 });

@@ -1,5 +1,5 @@
 import type { DockConfig } from "../types";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeCmd } from "../bridge";
 import {
   IconDockLeft,
   IconDockRight,
@@ -10,79 +10,125 @@ import {
   IconPause,
   IconPlay,
 } from "./icons";
+import { forwardRef } from "react";
+
+export type MonitorStatus = "live" | "paused" | "loading" | "stale" | "error";
 
 interface Props {
   dock: DockConfig | null;
   paused: boolean;
+  status: MonitorStatus;
+  settingsOpen: boolean;
   onTogglePause: () => void;
   onDock: (edge: "none" | "left" | "right") => void;
   onSettings: () => void;
 }
 
-export function DockBar({ dock, paused, onTogglePause, onDock, onSettings }: Props) {
-  const edge = dock?.edge ?? "right";
+export const DockBar = forwardRef<HTMLButtonElement, Props>(function DockBar(
+  { dock, paused, status, settingsOpen, onTogglePause, onDock, onSettings },
+  settingsRef
+) {
+  const edge = dock?.edge ?? "none";
+  const statusLabel =
+    status === "paused"
+      ? "Paused"
+      : status === "loading"
+        ? "Loading"
+        : status === "error"
+          ? "Error"
+          : status === "stale"
+            ? "Stale"
+            : "Live";
+
   return (
-    <div className="header">
-      <div className="wordmark" data-tauri-drag-region>
-        <span className="logo">
-          <span className="logo-glyph" />
+    <header className="header">
+      <div className="titlebar-main" data-tauri-drag-region>
+        <div className="wordmark">
+          <span className="logo" aria-hidden="true">
+            <span className="logo-glyph" />
+          </span>
+          <span className="wordmark-text">Windash</span>
+        </div>
+        <span className={`live-pill live-${status}`} title={statusLabel} aria-live="polite">
+          <span className="status-dot" aria-hidden="true" />
+          <span className="status-label">{statusLabel}</span>
         </span>
-        <span>Windash</span>
       </div>
-      <span className="dock-controls">
+      <div className="dock-controls">
         <button
-          className="iconbtn"
+          type="button"
+          className={"iconbtn" + (paused ? " active" : "")}
           onClick={onTogglePause}
           title={paused ? "Resume monitoring" : "Pause monitoring"}
           aria-label={paused ? "Resume monitoring" : "Pause monitoring"}
+          aria-pressed={paused}
         >
-          {paused ? <IconPlay size={15} /> : <IconPause size={15} />}
+          {paused ? <IconPlay size={14} /> : <IconPause size={14} />}
         </button>
+        <div className="seg" role="group" aria-label="Window placement">
+          <button
+            type="button"
+            className={"seg-btn" + (edge === "left" ? " active" : "")}
+            onClick={() => onDock("left")}
+            title="Dock left"
+            aria-label="Dock left"
+            aria-pressed={edge === "left"}
+          >
+            <IconDockLeft size={14} />
+          </button>
+          <button
+            type="button"
+            className={"seg-btn" + (edge === "right" ? " active" : "")}
+            onClick={() => onDock("right")}
+            title="Dock right"
+            aria-label="Dock right"
+            aria-pressed={edge === "right"}
+          >
+            <IconDockRight size={14} />
+          </button>
+          <button
+            type="button"
+            className={"seg-btn" + (edge === "none" ? " active" : "")}
+            onClick={() => onDock("none")}
+            title="Float window"
+            aria-label="Float window"
+            aria-pressed={edge === "none"}
+          >
+            <IconFloat size={14} />
+          </button>
+        </div>
         <button
-          className={"iconbtn" + (edge === "left" ? " active" : "")}
-          onClick={() => onDock("left")}
-          title="Dock left"
-          aria-label="Dock left"
+          ref={settingsRef}
+          type="button"
+          className={"iconbtn" + (settingsOpen ? " active" : "")}
+          onClick={onSettings}
+          title="Settings"
+          aria-label="Settings"
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
         >
-          <IconDockLeft size={15} />
-        </button>
-        <button
-          className={"iconbtn" + (edge === "right" ? " active" : "")}
-          onClick={() => onDock("right")}
-          title="Dock right"
-          aria-label="Dock right"
-        >
-          <IconDockRight size={15} />
-        </button>
-        <button
-          className={"iconbtn" + (edge === "none" ? " active" : "")}
-          onClick={() => onDock("none")}
-          title="Float window"
-          aria-label="Float window"
-        >
-          <IconFloat size={15} />
-        </button>
-        <button className="iconbtn" onClick={onSettings} title="Settings" aria-label="Settings">
-          <IconSettings size={15} />
+          <IconSettings size={14} />
         </button>
         <span className="sep" />
         <button
+          type="button"
           className="iconbtn"
-          onClick={() => invoke("window_minimize")}
+          onClick={() => invokeCmd("window_minimize")}
           title="Minimize"
           aria-label="Minimize"
         >
-          <IconMinimize size={15} />
+          <IconMinimize size={14} />
         </button>
         <button
+          type="button"
           className="iconbtn iconbtn-close"
-          onClick={() => invoke("window_hide")}
+          onClick={() => invokeCmd("window_hide")}
           title="Close to tray"
           aria-label="Close to tray"
         >
-          <IconClose size={15} />
+          <IconClose size={14} />
         </button>
-      </span>
-    </div>
+      </div>
+    </header>
   );
-}
+});

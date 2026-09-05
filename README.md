@@ -4,6 +4,12 @@ A personal **Windows system dashboard** — a tiny, tray-resident desktop app th
 live system stats, quick actions, and a persistent notes strip. Built as a portfolio piece
 to learn **Rust** while keeping a fast **React** UI.
 
+<p align="center">
+  <img src="docs/screenshots/dark.png" alt="Windash dark theme sidebar" width="280" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/light.png" alt="Windash light theme sidebar" width="280" />
+</p>
+
 > Stack: **Tauri 2** (Rust core) · **React 18 + TypeScript** (UI) · **Vite** (bundler)
 > Metrics via [`sysinfo`](https://crates.io/crates/sysinfo); notes persisted as JSON in AppData.
 
@@ -59,7 +65,7 @@ windash/
 │   ├── App.tsx          # dashboard shell + polling loop
 │   ├── components/      # Gauge, MemBar, NetSpark, QuickActions, NotesStrip
 │   ├── types.ts         # shared TS types mirroring the Rust commands
-│   └── styles.css       # dark theme
+│   └── styles.css       # Fluent tokens, light + dark themes
 └── src-tauri/           # Rust backend (Tauri)
     ├── src/lib.rs       # commands + tray + global shortcut + window events
     ├── src/metrics.rs   # sysinfo wrapper

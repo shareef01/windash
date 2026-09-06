@@ -17,6 +17,7 @@ export interface ProcInfo {
   cpu: number;
   mem: number;
   pid: number;
+  start_time: number;
   exe: string;
 }
 

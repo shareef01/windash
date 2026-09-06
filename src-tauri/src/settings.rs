@@ -6,22 +6,94 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use tauri::Manager;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Dark,
+    Light,
+}
+
+impl ThemePreference {
+    #[allow(dead_code)]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+}
+
+fn deserialize_theme_lenient<'de, D>(deserializer: D) -> Result<ThemePreference, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = match String::deserialize(deserializer) {
+        Ok(s) => s,
+        Err(_) => return Ok(ThemePreference::System),
+    };
+    match s.to_lowercase().as_str() {
+        "dark" => Ok(ThemePreference::Dark),
+        "light" => Ok(ThemePreference::Light),
+        _ => Ok(ThemePreference::System),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcessSort {
+    #[default]
+    Cpu,
+    Mem,
+    Name,
+}
+
+impl ProcessSort {
+    #[allow(dead_code)]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Mem => "mem",
+            Self::Name => "name",
+        }
+    }
+}
+
+fn deserialize_sort_lenient<'de, D>(deserializer: D) -> Result<ProcessSort, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = match String::deserialize(deserializer) {
+        Ok(s) => s,
+        Err(_) => return Ok(ProcessSort::Cpu),
+    };
+    match s.to_lowercase().as_str() {
+        "mem" => Ok(ProcessSort::Mem),
+        "name" => Ok(ProcessSort::Name),
+        _ => Ok(ProcessSort::Cpu),
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(default)]
 pub struct Settings {
     pub always_on_top: bool,
     /// Refresh interval in milliseconds (clamped 1000..10000).
     pub refresh_ms: u64,
-    /// "dark" | "light" | "system"
-    pub theme: String,
+    /// Theme preference: System, Dark, or Light
+    #[serde(deserialize_with = "deserialize_theme_lenient")]
+    pub theme: ThemePreference,
     pub show_disks: bool,
     pub show_processes: bool,
     pub show_notes: bool,
     pub show_actions: bool,
-    /// Use the Windows 11 Mica backdrop for the window (falls back to blur).
+    /// Use the Windows 11 Mica backdrop for the window.
     pub mica_enabled: bool,
     /// Last process sort key, persisted so it survives restarts.
-    pub sort_key: String,
+    #[serde(deserialize_with = "deserialize_sort_lenient")]
+    pub sort_key: ProcessSort,
 }
 
 impl Default for Settings {
@@ -29,14 +101,22 @@ impl Default for Settings {
         Settings {
             always_on_top: true,
             refresh_ms: 2000,
-            theme: "system".into(),
+            theme: ThemePreference::System,
             show_disks: true,
             show_processes: true,
             show_notes: true,
             show_actions: true,
             mica_enabled: true,
-            sort_key: "cpu".into(),
+            sort_key: ProcessSort::Cpu,
         }
+    }
+}
+
+impl Settings {
+    /// Canonical normalization path ensuring all values conform to safe operational bounds.
+    pub fn normalize(mut self) -> Self {
+        self.refresh_ms = self.refresh_ms.clamp(1000, 10_000);
+        self
     }
 }
 
@@ -61,7 +141,7 @@ impl SettingsStore {
             cache: Settings::default(),
         };
         store.ensure_exists()?;
-        let cache = store.load()?.settings;
+        let cache = store.load()?;
         Ok(Self {
             path: store.path,
             cache,
@@ -72,25 +152,7 @@ impl SettingsStore {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
         }
-        // If the file is missing, write defaults. If it exists but is corrupt,
-        // repair it (overwrite with defaults) rather than crashing at startup.
         if !self.path.exists() {
-            let data = SettingsData {
-                settings: Settings::default(),
-            };
-            crate::persist::atomic_write(
-                &self.path,
-                &serde_json::to_string_pretty(&data).map_err(|e| format!("serialize: {e}"))?,
-            )?;
-        } else if fs::read_to_string(&self.path)
-            .ok()
-            .and_then(|t| serde_json::from_str::<SettingsData>(&t).ok())
-            .is_none()
-        {
-            log::warn!(
-                "settings file corrupted, repairing: {}",
-                self.path.display()
-            );
             let data = SettingsData {
                 settings: Settings::default(),
             };
@@ -102,11 +164,32 @@ impl SettingsStore {
         Ok(())
     }
 
-    fn load(&self) -> Result<SettingsData, String> {
-        let text = fs::read_to_string(&self.path).map_err(|e| format!("read: {}", e))?;
-        let data: SettingsData =
-            serde_json::from_str(&text).map_err(|e| format!("parse: {}", e))?;
-        Ok(data)
+    pub fn load(&self) -> Result<Settings, String> {
+        let text = match fs::read_to_string(&self.path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Settings::default()),
+            Err(e) => return Err(format!("read: {e}")),
+        };
+
+        match serde_json::from_str::<SettingsData>(&text) {
+            Ok(data) => {
+                let normalized = data.settings.clone().normalize();
+                if normalized != data.settings {
+                    let _ = self.save(&normalized);
+                }
+                Ok(normalized)
+            }
+            Err(e) => {
+                log::warn!(
+                    "settings file corrupted ({e}), backing up: {}",
+                    self.path.display()
+                );
+                crate::persist::backup_corrupt_file(&self.path);
+                let default = Settings::default();
+                let _ = self.save(&default);
+                Ok(default)
+            }
+        }
     }
 
     fn save(&self, s: &Settings) -> Result<(), String> {
@@ -130,12 +213,10 @@ impl SettingsStore {
             s.always_on_top = v;
         }
         if let Some(v) = patch.refresh_ms {
-            s.refresh_ms = v.clamp(1000, 10000);
+            s.refresh_ms = v;
         }
         if let Some(v) = patch.theme {
-            if matches!(v.as_str(), "dark" | "light" | "system") {
-                s.theme = v;
-            }
+            s.theme = v;
         }
         if let Some(v) = patch.show_disks {
             s.show_disks = v;
@@ -153,10 +234,9 @@ impl SettingsStore {
             s.mica_enabled = v;
         }
         if let Some(v) = patch.sort_key {
-            if matches!(v.as_str(), "cpu" | "mem" | "name") {
-                s.sort_key = v;
-            }
+            s.sort_key = v;
         }
+        let s = s.normalize();
         self.save(&s)?;
         self.cache = s.clone();
         Ok(s)
@@ -167,13 +247,13 @@ impl SettingsStore {
 pub struct SettingsPatch {
     pub always_on_top: Option<bool>,
     pub refresh_ms: Option<u64>,
-    pub theme: Option<String>,
+    pub theme: Option<ThemePreference>,
     pub show_disks: Option<bool>,
     pub show_processes: Option<bool>,
     pub show_notes: Option<bool>,
     pub show_actions: Option<bool>,
     pub mica_enabled: Option<bool>,
-    pub sort_key: Option<String>,
+    pub sort_key: Option<ProcessSort>,
 }
 
 #[cfg(test)]
@@ -185,13 +265,13 @@ mod tests {
         let s = Settings::default();
         assert!(s.always_on_top);
         assert_eq!(s.refresh_ms, 2000);
-        assert_eq!(s.theme, "system");
+        assert_eq!(s.theme, ThemePreference::System);
         assert!(s.show_disks);
         assert!(s.show_processes);
         assert!(s.show_notes);
         assert!(s.show_actions);
         assert!(s.mica_enabled);
-        assert_eq!(s.sort_key, "cpu");
+        assert_eq!(s.sort_key, ProcessSort::Cpu);
     }
 
     #[test]
@@ -200,7 +280,42 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let parsed: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.refresh_ms, 2000);
-        assert_eq!(parsed.sort_key, "cpu");
+        assert_eq!(parsed.theme, ThemePreference::System);
+        assert_eq!(parsed.sort_key, ProcessSort::Cpu);
+    }
+
+    #[test]
+    fn test_settings_normalize_clamps_refresh_ms() {
+        let zero = Settings {
+            refresh_ms: 0,
+            ..Default::default()
+        }
+        .normalize();
+        assert_eq!(zero.refresh_ms, 1000);
+
+        let small = Settings {
+            refresh_ms: 500,
+            ..Default::default()
+        }
+        .normalize();
+        assert_eq!(small.refresh_ms, 1000);
+
+        let large = Settings {
+            refresh_ms: 99_999,
+            ..Default::default()
+        }
+        .normalize();
+        assert_eq!(large.refresh_ms, 10_000);
+    }
+
+    #[test]
+    fn test_invalid_enums_repair_to_defaults() {
+        let json = r#"{"refresh_ms": 0, "theme": "invalid_theme", "sort_key": "junk"}"#;
+        let parsed: Settings = serde_json::from_str(json).unwrap();
+        let normalized = parsed.normalize();
+        assert_eq!(normalized.refresh_ms, 1000);
+        assert_eq!(normalized.theme, ThemePreference::System);
+        assert_eq!(normalized.sort_key, ProcessSort::Cpu);
     }
 
     #[test]
@@ -209,7 +324,7 @@ mod tests {
         let parsed: Settings = serde_json::from_str(json).unwrap();
         assert!(!parsed.always_on_top);
         assert_eq!(parsed.refresh_ms, 3000);
-        assert_eq!(parsed.theme, "light");
-        assert_eq!(parsed.sort_key, "mem");
+        assert_eq!(parsed.theme, ThemePreference::Light);
+        assert_eq!(parsed.sort_key, ProcessSort::Mem);
     }
 }

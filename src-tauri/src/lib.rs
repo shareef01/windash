@@ -77,6 +77,9 @@ pub fn run() {
                 .tooltip("Windash — system dashboard")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "quit" => {
+                        if let Ok(geom) = app.state::<AppState>().geom.lock() {
+                            geom.flush();
+                        }
                         app.exit(0);
                     }
                     "show" => {
@@ -167,22 +170,69 @@ pub fn run() {
                     .state::<AppState>()
                     .dock
                     .lock()
-                    .map(|d| d.get().edge())
+                    .map(|d| d.get().edge)
                     .unwrap_or(dock::DockEdge::None);
                 if dock_edge == dock::DockEdge::None {
                     if let Ok(geom_guard) = app.state::<AppState>().geom.lock() {
                         let g = geom_guard.get("none");
                         drop(geom_guard);
+
+                        let scale = window.scale_factor().unwrap_or(1.0);
+                        let monitors: Vec<geom::Rect> = window
+                            .available_monitors()
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|m| {
+                                let wa = m.work_area();
+                                geom::Rect {
+                                    x: wa.position.x as f64 / scale,
+                                    y: wa.position.y as f64 / scale,
+                                    width: wa.size.width as f64 / scale,
+                                    height: wa.size.height as f64 / scale,
+                                }
+                            })
+                            .collect();
+
+                        let primary_rect = window
+                            .primary_monitor()
+                            .ok()
+                            .flatten()
+                            .map(|m| {
+                                let wa = m.work_area();
+                                geom::Rect {
+                                    x: wa.position.x as f64 / scale,
+                                    y: wa.position.y as f64 / scale,
+                                    width: wa.size.width as f64 / scale,
+                                    height: wa.size.height as f64 / scale,
+                                }
+                            })
+                            .unwrap_or(geom::Rect {
+                                x: 0.0,
+                                y: 0.0,
+                                width: 1920.0,
+                                height: 1040.0,
+                            });
+
+                        let saved_rect = geom::Rect {
+                            x: g.x as f64,
+                            y: g.y as f64,
+                            width: g.width as f64,
+                            height: g.height as f64,
+                        };
+
+                        let resolved =
+                            geom::resolve_window_placement(saved_rect, &monitors, primary_rect);
+
                         use tauri::{LogicalPosition, LogicalSize};
-                        let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
-                        let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
+                        let _ = window.set_size(LogicalSize::new(resolved.width, resolved.height));
+                        let _ = window.set_position(LogicalPosition::new(resolved.x, resolved.y));
                         // Tell the frontend the actual window width so the responsive
                         // layout mode matches the restored geometry.
                         let _ = window.emit(
                             "windash://resized",
                             serde_json::json!({
-                                "width": g.width as f64,
-                                "height": g.height as f64,
+                                "width": resolved.width,
+                                "height": resolved.height,
                             }),
                         );
                     }
@@ -207,7 +257,6 @@ pub fn run() {
             end_process,
             get_settings,
             update_settings,
-            set_always_on_top,
             get_system_theme,
         ])
         .on_window_event(|window, event| match event {
@@ -217,57 +266,74 @@ pub fn run() {
                     Ok(guard) => guard.get().edge,
                     Err(_) => return,
                 };
-                // The event gives a `&Window`; get the `WebviewWindow` for the
-                // docking helpers.
                 let wv = match window.get_webview_window("main") {
                     Some(w) => w,
                     None => return,
                 };
-                if edge != "none" {
-                    // Docked: re-snap to the *current* monitor so dragging the
-                    // window (or moving it across mixed-DPI displays) keeps it
-                    // glued to the correct edge at the right scale.
+                if edge != dock::DockEdge::None {
+                    // Docked: re-snap to the current monitor if geometry deviated,
+                    // but skip if window is already at target rect to avoid feedback loops.
                     if let Ok(guard) = state.dock.lock() {
                         let cfg = guard.get();
+                        drop(guard);
+                        if let Ok(Some(monitor)) = wv.current_monitor() {
+                            let scale = wv.scale_factor().unwrap_or(1.0);
+                            let wa = monitor.work_area();
+                            let work_area = dock::Rect {
+                                x: wa.position.x as f64 / scale,
+                                y: wa.position.y as f64 / scale,
+                                width: wa.size.width as f64 / scale,
+                                height: wa.size.height as f64 / scale,
+                            };
+                            let target =
+                                dock::calculate_docked_rect(work_area, cfg.edge, cfg.width as f64);
+                            if let (Ok(curr_pos), Ok(curr_size)) =
+                                (wv.outer_position(), wv.outer_size())
+                            {
+                                let curr_x = curr_pos.x as f64 / scale;
+                                let curr_y = curr_pos.y as f64 / scale;
+                                let curr_w = curr_size.width as f64 / scale;
+                                let curr_h = curr_size.height as f64 / scale;
+                                if (curr_x - target.x).abs() < 2.0
+                                    && (curr_y - target.y).abs() < 2.0
+                                    && (curr_w - target.width).abs() < 2.0
+                                    && (curr_h - target.height).abs() < 2.0
+                                {
+                                    return;
+                                }
+                            }
+                        }
                         let _ = dock::apply_dock(&wv, &cfg);
                     }
                     return;
                 }
-                // Floating: persist geometry (keyed by edge) on every move.
+                // Floating: persist geometry (debounced) on every move.
                 if let (Ok(pos), Ok(outer)) = (wv.outer_position(), wv.outer_size()) {
                     let scale = wv.scale_factor().unwrap_or(1.0);
                     let g = geom::WindowGeom {
-                        x: (pos.x as f64 / scale) as i32,
-                        y: (pos.y as f64 / scale) as i32,
-                        width: (outer.width as f64 / scale) as u32,
-                        height: (outer.height as f64 / scale) as u32,
+                        x: (pos.x as f64 / scale).round() as i32,
+                        y: (pos.y as f64 / scale).round() as i32,
+                        width: (outer.width as f64 / scale).round() as u32,
+                        height: (outer.height as f64 / scale).round() as u32,
                     };
                     if let Ok(geom_guard) = state.geom.lock() {
                         let _ = geom_guard.set("none", &g);
                     }
                 }
                 if let Some(detected) = dock::detect_edge(&wv) {
-                    let d = match detected {
-                        dock::DockEdge::Left => "left".to_string(),
-                        dock::DockEdge::Right => "right".to_string(),
-                        dock::DockEdge::None => "none".to_string(),
-                    };
-                    // Snap + persist.
-                    if let Ok(store) = state.dock.lock() {
-                        let mut cfg = store.get();
-                        cfg.edge = d.clone();
-                        let _ = store.set(&cfg);
-                        drop(store);
-                        let _ = dock::apply_dock(&wv, &cfg);
-                        // Tell the frontend the dock mode changed.
-                        let _ = window.emit("windash://dock", d);
+                    if detected != dock::DockEdge::None {
+                        if let Ok(store) = state.dock.lock() {
+                            let mut cfg = store.get();
+                            cfg.edge = detected;
+                            let _ = store.set(&cfg);
+                            drop(store);
+                            let _ = dock::apply_dock(&wv, &cfg);
+                            let _ = window.emit("windash://dock", detected.as_str());
+                        }
                     }
                 }
             }
             tauri::WindowEvent::Focused(focused) => {
-                // When the window regains focus, tell the frontend to refresh
-                // the OS theme (so "Follow Windows" stays in sync without
-                // polling `reg` on a timer — which would flash consoles).
                 if *focused {
                     let _ = window.emit("windash://focused", ());
                 }
@@ -286,15 +352,15 @@ pub fn run() {
                 let is_floating = st
                     .dock
                     .lock()
-                    .map(|d| d.get().edge() == dock::DockEdge::None)
+                    .map(|d| d.get().edge == dock::DockEdge::None)
                     .unwrap_or(false);
                 if is_floating {
                     if let (Ok(pos), Ok(outer)) = (window.outer_position(), window.outer_size()) {
                         let g = geom::WindowGeom {
-                            x: (pos.x as f64 / scale) as i32,
-                            y: (pos.y as f64 / scale) as i32,
-                            width: (outer.width as f64 / scale) as u32,
-                            height: (outer.height as f64 / scale) as u32,
+                            x: (pos.x as f64 / scale).round() as i32,
+                            y: (pos.y as f64 / scale).round() as i32,
+                            width: (outer.width as f64 / scale).round() as u32,
+                            height: (outer.height as f64 / scale).round() as u32,
                         };
                         if let Ok(geom_guard) = st.geom.lock() {
                             let _ = geom_guard.set("none", &g);
@@ -302,15 +368,12 @@ pub fn run() {
                     }
                 }
             }
-            // DPI / scale-factor or theme change (e.g. moving across monitors, or
-            // the user changes the display scaling): re-snap a docked sidebar to
-            // the current monitor so it stays correctly placed and sized.
-            tauri::WindowEvent::ScaleFactorChanged { .. } | tauri::WindowEvent::ThemeChanged(_) => {
+            tauri::WindowEvent::ScaleFactorChanged { .. } => {
                 let state = window.state::<AppState>();
                 let is_docked = state
                     .dock
                     .lock()
-                    .map(|d| d.get().edge() != dock::DockEdge::None)
+                    .map(|d| d.get().edge != dock::DockEdge::None)
                     .unwrap_or(false);
                 if is_docked {
                     if let Some(wv) = window.get_webview_window("main") {
@@ -319,6 +382,32 @@ pub fn run() {
                             let _ = dock::apply_dock(&wv, &cfg);
                         }
                     }
+                }
+            }
+            tauri::WindowEvent::ThemeChanged(theme) => {
+                let theme_str = match theme {
+                    tauri::Theme::Light => "light",
+                    _ => "dark",
+                };
+                let _ = window.emit("windash://theme", theme_str);
+                let state = window.state::<AppState>();
+                let is_docked = state
+                    .dock
+                    .lock()
+                    .map(|d| d.get().edge != dock::DockEdge::None)
+                    .unwrap_or(false);
+                if is_docked {
+                    if let Some(wv) = window.get_webview_window("main") {
+                        if let Ok(dock_guard) = state.dock.lock() {
+                            let cfg = dock_guard.get();
+                            let _ = dock::apply_dock(&wv, &cfg);
+                        }
+                    }
+                }
+            }
+            tauri::WindowEvent::Destroyed | tauri::WindowEvent::CloseRequested { .. } => {
+                if let Ok(geom) = window.state::<AppState>().geom.lock() {
+                    geom.flush();
                 }
             }
             _ => {}
@@ -396,24 +485,43 @@ fn open_explorer(pid: Option<u64>, out: tauri::State<'_, AppState>) -> Result<()
     }
 }
 
-#[tauri::command]
-fn windows_search(query: Option<String>) -> Result<(), String> {
-    let target = match query {
-        Some(q) => {
-            let trimmed = q.trim();
-            if !trimmed.is_empty() {
-                // Strip control characters and double quotes to prevent parameter confusion
-                let clean: String = trimmed
-                    .chars()
-                    .filter(|c| !c.is_control() && *c != '"')
-                    .collect();
-                format!("search-ms:query={}", clean)
-            } else {
-                "search-ms:".into()
+/// Builds a safe `search-ms:` URI.
+/// Strips control characters, quotes, and newlines to avoid parameter confusion,
+/// and URL-percent-encodes the query parameter according to RFC 3986.
+pub fn build_search_ms_uri(query: Option<&str>) -> String {
+    let q = match query {
+        Some(s) => s,
+        None => return "search-ms:".to_string(),
+    };
+    // Strip control characters, quotes, and newlines
+    let clean: String = q
+        .chars()
+        .filter(|c| !c.is_control() && *c != '"' && *c != '\'')
+        .collect();
+    let trimmed = clean.trim();
+    if trimmed.is_empty() {
+        return "search-ms:".to_string();
+    }
+
+    // RFC 3986 percent encoding for query string
+    let mut encoded = String::with_capacity(trimmed.len() * 3);
+    for b in trimmed.as_bytes() {
+        match *b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(*b as char);
+            }
+            other => {
+                use std::fmt::Write;
+                let _ = write!(&mut encoded, "%{:02X}", other);
             }
         }
-        None => "search-ms:".into(),
-    };
+    }
+    format!("search-ms:query={}", encoded)
+}
+
+#[tauri::command]
+fn windows_search(query: Option<String>) -> Result<(), String> {
+    let target = build_search_ms_uri(query.as_deref());
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -433,22 +541,30 @@ fn windows_search(query: Option<String>) -> Result<(), String> {
     }
 }
 
-/// Terminate a process by PID using the native Windows task-killer. Requires the
-/// process to be terminable by the current user; permission failures surface as
-/// a clear error rather than a silent no-op.
+/// Terminate a process by PID using the native Windows task-killer.
+/// Re-validates the process identity (PID, start time, name) immediately prior
+/// to termination to ensure PID reuse / stale UI state cannot cause an unintended
+/// process to be killed.
 #[tauri::command]
-fn end_process(pid: u64) -> Result<(), String> {
-    // Guard against terminating critical system PIDs or own process
+fn end_process(
+    pid: u64,
+    expected_start_time: u64,
+    expected_name: Option<String>,
+    out: tauri::State<'_, AppState>,
+) -> Result<(), String> {
     let current_pid = std::process::id() as u64;
-    if pid == 0 || pid == 4 {
-        return Err(format!(
-            "Process {} is a protected Windows system process and cannot be terminated.",
-            pid
-        ));
-    }
-    if pid == current_pid {
-        return Err("Cannot terminate Windash process from within itself.".into());
-    }
+    let live_proc = {
+        let mut m = out.metrics.lock().map_err(|e| e.to_string())?;
+        m.process_identity(pid)
+    };
+
+    metrics::validate_process_termination(
+        pid,
+        expected_start_time,
+        expected_name.as_deref(),
+        current_pid,
+        live_proc.as_ref(),
+    )?;
 
     #[cfg(target_os = "windows")]
     {
@@ -507,19 +623,6 @@ fn update_settings(
 }
 
 #[tauri::command]
-fn set_always_on_top(value: bool, out: tauri::State<'_, AppState>) -> Result<(), String> {
-    out.settings
-        .lock()
-        .map_err(|e| e.to_string())?
-        .update(settings::SettingsPatch {
-            always_on_top: Some(value),
-            ..Default::default()
-        })
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
 fn get_system_theme() -> String {
     #[cfg(target_os = "windows")]
     {
@@ -563,8 +666,7 @@ fn get_system_theme() -> String {
 
 /// Remove native window chrome and apply a Windows 11 backdrop when enabled.
 /// `dark` should match the effective UI theme so Mica is not forced to dark
-/// while the webview is in light mode. If Mica is unavailable, skip blur —
-/// CSS surfaces are more reliable than a hard-coded dark acrylic tint.
+/// while the webview is in light mode. If Mica is disabled, clear it cleanly.
 #[tauri::command]
 fn apply_immersive(
     dark: Option<bool>,
@@ -574,7 +676,7 @@ fn apply_immersive(
     let _ = window.set_decorations(false);
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::apply_mica;
+        use window_vibrancy::{apply_mica, clear_mica};
         let mica = out
             .settings
             .lock()
@@ -583,6 +685,8 @@ fn apply_immersive(
             .mica_enabled;
         if mica {
             let _ = apply_mica(&window, Some(dark.unwrap_or(true)));
+        } else {
+            let _ = clear_mica(&window);
         }
     }
     Ok(())
@@ -590,7 +694,7 @@ fn apply_immersive(
 
 #[tauri::command]
 fn set_dock(
-    edge: String,
+    edge: dock::DockEdge,
     out: tauri::State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<dock::DockConfig, String> {
@@ -600,27 +704,82 @@ fn set_dock(
         .map_err(|e| e.to_string())?
         .get()
         .always_on_top;
-    let store = out.dock.lock().map_err(|e| e.to_string())?;
-    let mut cfg = store.get();
-    cfg.edge = edge;
-    cfg.always_on_top = always_on_top;
-    store.set(&cfg)?;
-    drop(store);
-    dock::apply_dock(&window, &cfg)?;
+    let current_cfg = out.dock.lock().map_err(|e| e.to_string())?.get();
+    let target_cfg = dock::DockConfig {
+        edge,
+        width: current_cfg.width,
+        always_on_top,
+    };
 
-    // When un-docking, restore the saved floating geometry (size + position)
-    // so the window doesn't stay a full-height sidebar shape.
-    if cfg.edge() == dock::DockEdge::None {
+    if edge == dock::DockEdge::None {
+        // When un-docking, restore the saved floating geometry (size + position)
+        // resolved against currently available monitor work areas.
+        let scale = window.scale_factor().unwrap_or(1.0);
         let g = out.geom.lock().map_err(|e| e.to_string())?.get("none");
+
+        let monitors: Vec<geom::Rect> = window
+            .available_monitors()
+            .unwrap_or_default()
+            .iter()
+            .map(|m| {
+                let wa = m.work_area();
+                geom::Rect {
+                    x: wa.position.x as f64 / scale,
+                    y: wa.position.y as f64 / scale,
+                    width: wa.size.width as f64 / scale,
+                    height: wa.size.height as f64 / scale,
+                }
+            })
+            .collect();
+
+        let primary_rect = window
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|m| {
+                let wa = m.work_area();
+                geom::Rect {
+                    x: wa.position.x as f64 / scale,
+                    y: wa.position.y as f64 / scale,
+                    width: wa.size.width as f64 / scale,
+                    height: wa.size.height as f64 / scale,
+                }
+            })
+            .unwrap_or(geom::Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1040.0,
+            });
+
+        let saved_rect = geom::Rect {
+            x: g.x as f64,
+            y: g.y as f64,
+            width: g.width as f64,
+            height: g.height as f64,
+        };
+
+        let resolved = geom::resolve_window_placement(saved_rect, &monitors, primary_rect);
+
+        // Apply native changes first
+        dock::apply_dock(&window, &target_cfg)?;
         use tauri::{LogicalPosition, LogicalSize};
-        let _ = window.set_size(LogicalSize::new(g.width as f64, g.height as f64));
-        let _ = window.set_position(LogicalPosition::new(g.x as f64, g.y as f64));
+        let _ = window.set_size(LogicalSize::new(resolved.width, resolved.height));
+        let _ = window.set_position(LogicalPosition::new(resolved.x, resolved.y));
         let _ = window.emit(
             "windash://resized",
-            serde_json::json!({ "width": g.width as f64, "height": g.height as f64 }),
+            serde_json::json!({ "width": resolved.width, "height": resolved.height }),
         );
+    } else {
+        // Docking: apply native window positioning first!
+        dock::apply_dock(&window, &target_cfg)?;
     }
-    Ok(cfg)
+
+    // Native action succeeded, persist the new dock config!
+    let store = out.dock.lock().map_err(|e| e.to_string())?;
+    store.set(&target_cfg)?;
+
+    Ok(target_cfg)
 }
 
 #[tauri::command]
@@ -654,4 +813,60 @@ fn directories_home() -> Option<String> {
 #[cfg(not(target_os = "windows"))]
 fn directories_home() -> Option<String> {
     std::env::var("HOME").ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_uri_empty_or_none() {
+        assert_eq!(build_search_ms_uri(None), "search-ms:");
+        assert_eq!(build_search_ms_uri(Some("")), "search-ms:");
+        assert_eq!(build_search_ms_uri(Some("   ")), "search-ms:");
+        assert_eq!(build_search_ms_uri(Some("\r\n\t")), "search-ms:");
+    }
+
+    #[test]
+    fn test_search_uri_alphanumeric_and_spaces() {
+        assert_eq!(build_search_ms_uri(Some("rust")), "search-ms:query=rust");
+        assert_eq!(
+            build_search_ms_uri(Some("rust cargo")),
+            "search-ms:query=rust%20cargo"
+        );
+    }
+
+    #[test]
+    fn test_search_uri_quotes_and_control_stripped() {
+        assert_eq!(
+            build_search_ms_uri(Some("hello \"world\" 'test'")),
+            "search-ms:query=hello%20world%20test"
+        );
+        assert_eq!(
+            build_search_ms_uri(Some("cmd\x00\r\n/c calc")),
+            "search-ms:query=cmd%2Fc%20calc"
+        );
+    }
+
+    #[test]
+    fn test_search_uri_special_characters_encoded() {
+        assert_eq!(
+            build_search_ms_uri(Some("c++ & rust=fast")),
+            "search-ms:query=c%2B%2B%20%26%20rust%3Dfast"
+        );
+    }
+
+    #[test]
+    fn test_search_uri_cjk_and_emoji() {
+        // UTF-8 bytes for '日本語' are E6 97 A5 E6 9C AC E8 AA 9E
+        assert_eq!(
+            build_search_ms_uri(Some("日本語")),
+            "search-ms:query=%E6%97%A5%E6%9C%AC%E8%AA%9E"
+        );
+        // Emoji 🦀 (F0 9F A6 80)
+        assert_eq!(
+            build_search_ms_uri(Some("🦀")),
+            "search-ms:query=%F0%9F%A6%80"
+        );
+    }
 }

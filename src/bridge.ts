@@ -52,11 +52,11 @@ function previewMetrics(): MetricsSnapshot {
     uptime_seconds: 12 * 86400 + 3 * 3600,
     os_name: "Windows 11",
     top_processes: [
-      { name: "chrome.exe", cpu: 8.2, mem: 1.2 * 1024 * 1024 * 1024, pid: 4120, exe: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" },
-      { name: "Code.exe", cpu: 5.1, mem: 890 * 1024 * 1024, pid: 1884, exe: "C:\\Users\\me\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe" },
-      { name: "MsMpEng.exe", cpu: 2.4, mem: 210 * 1024 * 1024, pid: 904, exe: "C:\\Program Files\\Windows Defender\\MsMpEng.exe" },
-      { name: "explorer.exe", cpu: 1.1, mem: 140 * 1024 * 1024, pid: 1288, exe: "C:\\Windows\\explorer.exe" },
-      { name: "Windash.exe", cpu: 0.4, mem: 48 * 1024 * 1024, pid: 2201, exe: "C:\\Program Files\\Windash\\Windash.exe" },
+      { name: "chrome.exe", cpu: 8.2, mem: 1.2 * 1024 * 1024 * 1024, pid: 4120, start_time: 1700000000, exe: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" },
+      { name: "Code.exe", cpu: 5.1, mem: 890 * 1024 * 1024, pid: 1884, start_time: 1700000100, exe: "C:\\Users\\me\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe" },
+      { name: "MsMpEng.exe", cpu: 2.4, mem: 210 * 1024 * 1024, pid: 904, start_time: 1700000010, exe: "C:\\Program Files\\Windows Defender\\MsMpEng.exe" },
+      { name: "explorer.exe", cpu: 1.1, mem: 140 * 1024 * 1024, pid: 1288, start_time: 1700000020, exe: "C:\\Windows\\explorer.exe" },
+      { name: "Windash.exe", cpu: 0.4, mem: 48 * 1024 * 1024, pid: 2201, start_time: 1700000200, exe: "C:\\Program Files\\Windash\\Windash.exe" },
     ],
   };
 }

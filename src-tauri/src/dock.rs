@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum DockEdge {
     None,
     Left,
@@ -15,6 +16,7 @@ pub enum DockEdge {
 }
 
 impl DockEdge {
+    #[allow(dead_code)]
     pub fn from_str(s: &str) -> DockEdge {
         match s {
             "left" => DockEdge::Left,
@@ -22,18 +24,30 @@ impl DockEdge {
             _ => DockEdge::None,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DockEdge::Left => "left",
+            DockEdge::Right => "right",
+            DockEdge::None => "none",
+        }
+    }
 }
 
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct DockConfig {
-    pub edge: String,
+    pub edge: DockEdge,
     pub width: u32,
     pub always_on_top: bool,
 }
 
-impl DockConfig {
-    pub fn edge(&self) -> DockEdge {
-        DockEdge::from_str(&self.edge)
+impl Default for DockConfig {
+    fn default() -> Self {
+        Self {
+            edge: DockEdge::None,
+            width: 390,
+            always_on_top: true,
+        }
     }
 }
 
@@ -57,11 +71,7 @@ impl DockStore {
             fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
         }
         if !self.path.exists() {
-            let default = DockConfig {
-                edge: "none".to_string(),
-                width: 390,
-                always_on_top: true,
-            };
+            let default = DockConfig::default();
             crate::persist::atomic_write(
                 &self.path,
                 &serde_json::to_string_pretty(&default).map_err(|e| format!("serialize: {e}"))?,
@@ -71,16 +81,21 @@ impl DockStore {
     }
 
     fn load(&self) -> Result<DockConfig, String> {
-        let text = fs::read_to_string(&self.path).map_err(|e| format!("read: {}", e))?;
+        let text = match fs::read_to_string(&self.path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(DockConfig::default()),
+            Err(e) => return Err(format!("read: {e}")),
+        };
+
         match serde_json::from_str::<DockConfig>(&text) {
             Ok(cfg) => Ok(cfg),
             Err(_) => {
-                log::warn!("dock file corrupted, repairing: {}", self.path.display());
-                let cfg = DockConfig {
-                    edge: "none".to_string(),
-                    width: 390,
-                    always_on_top: true,
-                };
+                log::warn!(
+                    "dock file corrupted, creating backup: {}",
+                    self.path.display()
+                );
+                crate::persist::backup_corrupt_file(&self.path);
+                let cfg = DockConfig::default();
                 let _ = self.save(&cfg);
                 Ok(cfg)
             }
@@ -95,11 +110,7 @@ impl DockStore {
     }
 
     pub fn get(&self) -> DockConfig {
-        self.load().unwrap_or(DockConfig {
-            edge: "right".to_string(),
-            width: 360,
-            always_on_top: true,
-        })
+        self.load().unwrap_or_default()
     }
 
     pub fn set(&self, cfg: &DockConfig) -> Result<(), String> {
@@ -107,14 +118,32 @@ impl DockStore {
     }
 }
 
-/// Position the window according to the dock config. Returns an error string on failure.
+/// Calculate the docked window rectangle against the monitor's WORK AREA (excluding taskbar).
+pub fn calculate_docked_rect(work_area: Rect, edge: DockEdge, width: f64) -> Rect {
+    let width = width.clamp(280.0, 640.0);
+    match edge {
+        DockEdge::None => work_area,
+        DockEdge::Left => Rect {
+            x: work_area.x,
+            y: work_area.y,
+            width,
+            height: work_area.height,
+        },
+        DockEdge::Right => Rect {
+            x: work_area.x + work_area.width - width,
+            y: work_area.y,
+            width,
+            height: work_area.height,
+        },
+    }
+}
+
+/// Position the window according to the dock config using the monitor's WORK AREA.
+/// Native window manipulation errors are propagated rather than silently swallowed.
 pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String> {
-    let edge = cfg.edge();
     let width = cfg.width.clamp(280, 640);
 
-    // Monitor geometry (physical pixels). Prefer the window's current monitor, but
-    // fall back to the primary monitor (current_monitor() can be None before the
-    // window is first shown/positioned, e.g. during setup).
+    // Prefer the window's current monitor, but fall back to the primary monitor.
     let monitor = if let Ok(Some(m)) = window.current_monitor() {
         m
     } else {
@@ -124,36 +153,46 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
             .flatten()
             .ok_or_else(|| "no monitor available".to_string())?
     };
-    // Monitor geometry. We want the window `width` CSS pixels wide on screen
-    // regardless of display scale, so work in LOGICAL coordinates: convert the
-    // monitor's physical size/position to logical by dividing by the scale factor.
-    // (Sizing in physical pixels caused content to be clipped on scaled displays.)
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let phys_size = *monitor.size();
-    let phys_pos = *monitor.position();
-    let m_w = phys_size.width as f64 / scale;
-    let m_h = phys_size.height as f64 / scale;
-    let m_x = phys_pos.x as f64 / scale;
-    let m_y = phys_pos.y as f64 / scale;
-    let width_f = width as f64;
 
-    match edge {
+    // Monitor geometry: work strictly in LOGICAL coordinates derived from the monitor's WORK AREA.
+    // The work area excludes taskbars on any side (bottom, top, left, right).
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let wa = monitor.work_area();
+    let work_area = Rect {
+        x: wa.position.x as f64 / scale,
+        y: wa.position.y as f64 / scale,
+        width: wa.size.width as f64 / scale,
+        height: wa.size.height as f64 / scale,
+    };
+
+    let target_rect = calculate_docked_rect(work_area, cfg.edge, width as f64);
+
+    match cfg.edge {
         DockEdge::None => {
-            let _ = window.set_always_on_top(cfg.always_on_top);
-            let _ = window.set_resizable(true);
+            window
+                .set_always_on_top(cfg.always_on_top)
+                .map_err(|e| format!("set_always_on_top: {e}"))?;
+            window
+                .set_resizable(true)
+                .map_err(|e| format!("set_resizable: {e}"))?;
             Ok(())
         }
         DockEdge::Left | DockEdge::Right => {
-            let x = if edge == DockEdge::Right {
-                m_x + m_w - width_f
-            } else {
-                m_x
-            };
-            let _ = window.set_resizable(false);
-            let _ = window.set_size(LogicalSize::new(width_f, m_h));
-            let _ = window.set_position(LogicalPosition::new(x, m_y));
-            let _ = window.set_always_on_top(cfg.always_on_top);
-            let _ = window.set_skip_taskbar(false);
+            window
+                .set_resizable(false)
+                .map_err(|e| format!("set_resizable: {e}"))?;
+            window
+                .set_size(LogicalSize::new(target_rect.width, target_rect.height))
+                .map_err(|e| format!("set_size: {e}"))?;
+            window
+                .set_position(LogicalPosition::new(target_rect.x, target_rect.y))
+                .map_err(|e| format!("set_position: {e}"))?;
+            window
+                .set_always_on_top(cfg.always_on_top)
+                .map_err(|e| format!("set_always_on_top: {e}"))?;
+            window
+                .set_skip_taskbar(false)
+                .map_err(|e| format!("set_skip_taskbar: {e}"))?;
             Ok(())
         }
     }
@@ -164,7 +203,7 @@ pub fn apply_dock(window: &WebviewWindow, cfg: &DockConfig) -> Result<(), String
 const SNAP_THRESHOLD: f64 = 48.0;
 
 /// Geometry rectangle in logical coordinates.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
@@ -200,10 +239,7 @@ pub fn calculate_snap_edge(
 
 /// Given the window's current top-left position, decide whether it should snap
 /// to the left or right edge of its current monitor. Returns None when it is not
-/// close enough to any edge (so a drag in open space leaves the window floating).
-///
-/// Uses the monitor *work area* (excludes the taskbar) so a docked sidebar never
-/// sits underneath the taskbar.
+/// close enough to any edge.
 pub fn detect_edge(window: &WebviewWindow) -> Option<DockEdge> {
     let monitor = window.current_monitor().ok().flatten()?;
     let scale = window.scale_factor().unwrap_or(1.0);
@@ -229,42 +265,133 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dock_edge_from_str() {
-        assert_eq!(DockEdge::from_str("left"), DockEdge::Left);
-        assert_eq!(DockEdge::from_str("right"), DockEdge::Right);
-        assert_eq!(DockEdge::from_str("none"), DockEdge::None);
-        assert_eq!(DockEdge::from_str("other"), DockEdge::None);
+    fn test_dock_edge_serde_valid() {
+        assert_eq!(
+            serde_json::from_str::<DockEdge>("\"left\"").unwrap(),
+            DockEdge::Left
+        );
+        assert_eq!(
+            serde_json::from_str::<DockEdge>("\"right\"").unwrap(),
+            DockEdge::Right
+        );
+        assert_eq!(
+            serde_json::from_str::<DockEdge>("\"none\"").unwrap(),
+            DockEdge::None
+        );
     }
 
     #[test]
-    fn test_dock_config_default() {
+    fn test_dock_edge_serde_invalid_rejected() {
+        assert!(serde_json::from_str::<DockEdge>("\"top\"").is_err());
+        assert!(serde_json::from_str::<DockEdge>("\"invalid\"").is_err());
+    }
+
+    #[test]
+    fn test_dock_config_canonical_default() {
         let cfg = DockConfig::default();
-        assert_eq!(cfg.edge(), DockEdge::None);
+        assert_eq!(cfg.edge, DockEdge::None);
+        assert_eq!(cfg.width, 390);
+        assert!(cfg.always_on_top);
+    }
+
+    #[test]
+    fn test_calculate_docked_rect_bottom_taskbar() {
+        // Monitor 1920x1080 with 40px taskbar at the bottom
+        let wa = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1040.0,
+        };
+        let right_dock = calculate_docked_rect(wa, DockEdge::Right, 390.0);
+        assert_eq!(right_dock.x, 1920.0 - 390.0);
+        assert_eq!(right_dock.y, 0.0);
+        assert_eq!(right_dock.width, 390.0);
+        assert_eq!(right_dock.height, 1040.0);
+
+        let left_dock = calculate_docked_rect(wa, DockEdge::Left, 390.0);
+        assert_eq!(left_dock.x, 0.0);
+        assert_eq!(left_dock.y, 0.0);
+        assert_eq!(left_dock.width, 390.0);
+        assert_eq!(left_dock.height, 1040.0);
+    }
+
+    #[test]
+    fn test_calculate_docked_rect_top_taskbar() {
+        // Monitor 1920x1080 with 40px taskbar at the top
+        let wa = Rect {
+            x: 0.0,
+            y: 40.0,
+            width: 1920.0,
+            height: 1040.0,
+        };
+        let right_dock = calculate_docked_rect(wa, DockEdge::Right, 390.0);
+        assert_eq!(right_dock.x, 1530.0);
+        assert_eq!(right_dock.y, 40.0);
+        assert_eq!(right_dock.height, 1040.0);
+    }
+
+    #[test]
+    fn test_calculate_docked_rect_left_and_right_taskbars() {
+        // Left taskbar 60px wide
+        let wa_left = Rect {
+            x: 60.0,
+            y: 0.0,
+            width: 1860.0,
+            height: 1080.0,
+        };
+        let dock_left = calculate_docked_rect(wa_left, DockEdge::Left, 390.0);
+        assert_eq!(dock_left.x, 60.0);
+        assert_eq!(dock_left.width, 390.0);
+
+        // Right taskbar 60px wide
+        let wa_right = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 1860.0,
+            height: 1080.0,
+        };
+        let dock_right = calculate_docked_rect(wa_right, DockEdge::Right, 390.0);
+        assert_eq!(dock_right.x, 1860.0 - 390.0);
+    }
+
+    #[test]
+    fn test_calculate_docked_rect_negative_monitor_origin() {
+        // Secondary monitor left of primary at (-1920, 0)
+        let wa = Rect {
+            x: -1920.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1040.0,
+        };
+        let right_dock = calculate_docked_rect(wa, DockEdge::Right, 390.0);
+        assert_eq!(right_dock.x, -1920.0 + 1920.0 - 390.0); // -390.0
+        assert_eq!(right_dock.y, 0.0);
+        assert_eq!(right_dock.height, 1040.0);
+
+        let left_dock = calculate_docked_rect(wa, DockEdge::Left, 390.0);
+        assert_eq!(left_dock.x, -1920.0);
+        assert_eq!(left_dock.y, 0.0);
+        assert_eq!(left_dock.height, 1040.0);
     }
 
     #[test]
     fn test_calculate_snap_edge() {
-        // Monitor: 1920x1080 at (0,0)
         let wa = Rect {
             x: 0.0,
             y: 0.0,
             width: 1920.0,
             height: 1080.0,
         };
-        // Window width: 390
-        // Near right edge: win_x = 1920 - 390 = 1530
         let right_snap = calculate_snap_edge(wa, 1520.0, 390.0, 100.0, 48.0);
         assert_eq!(right_snap, Some(DockEdge::Right));
 
-        // Near left edge: win_x = 10
         let left_snap = calculate_snap_edge(wa, 10.0, 390.0, 100.0, 48.0);
         assert_eq!(left_snap, Some(DockEdge::Left));
 
-        // In the middle: win_x = 800
         let mid = calculate_snap_edge(wa, 800.0, 390.0, 100.0, 48.0);
         assert_eq!(mid, None);
 
-        // Near right edge but too far above the monitor
         let too_high = calculate_snap_edge(wa, 1530.0, 390.0, -100.0, 48.0);
         assert_eq!(too_high, None);
     }

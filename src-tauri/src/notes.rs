@@ -46,22 +46,73 @@ impl NotesStore {
                 &serde_json::to_string_pretty(&NotesData::default())
                     .map_err(|e| format!("serialize: {e}"))?,
             )?;
+        } else if let Ok(text) = fs::read_to_string(&self.path) {
+            if Self::parse_or_recover(&text).is_none() {
+                crate::persist::backup_corrupt_file(&self.path);
+                crate::persist::atomic_write(
+                    &self.path,
+                    &serde_json::to_string_pretty(&NotesData::default())
+                        .map_err(|e| format!("serialize: {e}"))?,
+                )?;
+            }
         }
         Ok(())
     }
 
-    fn load(&self) -> Result<NotesData, String> {
-        let text = fs::read_to_string(&self.path).map_err(|e| format!("read: {}", e))?;
-        match serde_json::from_str::<NotesData>(&text) {
-            Ok(data) => Ok(data),
-            Err(_) => {
-                // Corrupt notes file: repair with an empty store rather than fail.
-                log::warn!("notes file corrupted, repairing: {}", self.path.display());
-                let data = NotesData::default();
-                let _ = self.save(&data);
-                Ok(data)
-            }
+    fn parse_or_recover(text: &str) -> Option<NotesData> {
+        // 1. Standard NotesData { notes, next_id }
+        if let Ok(data) = serde_json::from_str::<NotesData>(text) {
+            return Some(data);
         }
+
+        // 2. Object with "notes" array where next_id is absent
+        #[derive(Deserialize)]
+        struct PartialNotesData {
+            notes: Vec<Note>,
+        }
+        if let Ok(partial) = serde_json::from_str::<PartialNotesData>(text) {
+            let next_id = partial
+                .notes
+                .iter()
+                .map(|n| n.id)
+                .max()
+                .map(|m| m + 1)
+                .unwrap_or(0);
+            return Some(NotesData {
+                notes: partial.notes,
+                next_id,
+            });
+        }
+
+        // 3. Raw array of Note objects
+        if let Ok(notes) = serde_json::from_str::<Vec<Note>>(text) {
+            let next_id = notes.iter().map(|n| n.id).max().map(|m| m + 1).unwrap_or(0);
+            return Some(NotesData { notes, next_id });
+        }
+
+        None
+    }
+
+    fn load(&self) -> Result<NotesData, String> {
+        let text = match fs::read_to_string(&self.path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(NotesData::default()),
+            Err(e) => return Err(format!("read: {e}")),
+        };
+
+        if let Some(data) = Self::parse_or_recover(&text) {
+            return Ok(data);
+        }
+
+        // Corrupt notes file: preserve original bytes before resetting
+        log::warn!(
+            "notes file corrupted, preserving backup: {}",
+            self.path.display()
+        );
+        crate::persist::backup_corrupt_file(&self.path);
+        let data = NotesData::default();
+        let _ = self.save(&data);
+        Ok(data)
     }
 
     fn save(&self, data: &NotesData) -> Result<(), String> {
@@ -140,5 +191,31 @@ mod tests {
         let data = NotesData::default();
         assert!(data.notes.is_empty());
         assert_eq!(data.next_id, 0);
+    }
+
+    #[test]
+    fn test_notes_recovery_missing_next_id() {
+        let json =
+            r#"{"notes": [{"id": 5, "text": "Recover me", "created_at": "2026-08-25T00:00:00Z"}]}"#;
+        let recovered = NotesStore::parse_or_recover(json).expect("recovered");
+        assert_eq!(recovered.notes.len(), 1);
+        assert_eq!(recovered.notes[0].text, "Recover me");
+        assert_eq!(recovered.next_id, 6);
+    }
+
+    #[test]
+    fn test_notes_recovery_raw_array() {
+        let json = r#"[{"id": 10, "text": "Array note", "created_at": "2026-08-25T00:00:00Z"}]"#;
+        let recovered = NotesStore::parse_or_recover(json).expect("recovered");
+        assert_eq!(recovered.notes.len(), 1);
+        assert_eq!(recovered.notes[0].text, "Array note");
+        assert_eq!(recovered.next_id, 11);
+    }
+
+    #[test]
+    fn test_notes_recovery_rejects_unusable_json() {
+        let json = r#"{"invalid": "unrelated object"}"#;
+        assert!(NotesStore::parse_or_recover(json).is_none());
+        assert!(NotesStore::parse_or_recover("not json").is_none());
     }
 }

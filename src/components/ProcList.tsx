@@ -14,6 +14,7 @@ interface Props {
   onFocusFilter?: (fn: () => void) => void;
   onError?: (message: string, detail?: string) => void;
   onToast?: (message: string) => void;
+  onProcessEnded?: () => void;
   loading?: boolean;
 }
 
@@ -26,6 +27,7 @@ interface MenuState {
 interface ConfirmState {
   pid: number;
   name: string;
+  start_time: number;
 }
 
 const MENU_ITEMS = ["end", "location", "copy-details", "copy-pid"] as const;
@@ -39,6 +41,7 @@ export function ProcList({
   onFocusFilter,
   onError,
   onToast,
+  onProcessEnded,
   loading,
 }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -111,7 +114,7 @@ export function ProcList({
       const p = byPid(selectedPid);
       if (p) {
         e.preventDefault();
-        setConfirm({ pid: p.pid, name: p.name });
+        setConfirm({ pid: p.pid, name: p.name, start_time: p.start_time });
       }
     }
   }
@@ -158,7 +161,7 @@ export function ProcList({
   function requestEnd(p: ProcInfo | undefined) {
     setMenu(null);
     if (!p) return;
-    setConfirm({ pid: p.pid, name: p.name });
+    setConfirm({ pid: p.pid, name: p.name, start_time: p.start_time });
   }
 
   async function confirmEnd() {
@@ -166,14 +169,19 @@ export function ProcList({
     const target = { ...confirm };
     const still = byPid(target.pid);
     setConfirm(null);
-    if (!still || still.name !== target.name) {
+    if (!still || still.name !== target.name || still.start_time !== target.start_time) {
       onError?.("That process is no longer in the list. Refresh and try again.");
       return;
     }
     try {
-      await invokeCmd("end_process", { pid: target.pid });
+      await invokeCmd("end_process", {
+        pid: target.pid,
+        expected_start_time: target.start_time,
+        expected_name: target.name,
+      });
       onToast?.(`Ended ${target.name}`);
       if (selectedPid === target.pid) onSelect(null);
+      onProcessEnded?.();
     } catch (e) {
       const f = friendlyError(e, "Couldn't end that process.");
       onError?.(f.message, f.detail);

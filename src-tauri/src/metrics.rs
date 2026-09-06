@@ -51,7 +51,7 @@ impl SystemMetrics {
         self.last_update = Instant::now();
         self.system.refresh_all();
         self.networks.refresh_list();
-        if self.disk_tick % 5 == 0 {
+        if self.disk_tick.is_multiple_of(5) {
             self.disks.refresh();
         }
         self.disk_tick = self.disk_tick.wrapping_add(1);
@@ -88,6 +88,20 @@ impl SystemMetrics {
             }
         }
         None
+    }
+
+    /// Query the current live identity (PID, start_time, name) of a process.
+    /// Re-refreshes process information to protect against PID reuse.
+    pub fn process_identity(&mut self, pid: u64) -> Option<ProcessIdentity> {
+        let sysinfo_pid = sysinfo::Pid::from_u32(pid as u32);
+        self.system
+            .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[sysinfo_pid]), true);
+        let proc = self.system.process(sysinfo_pid)?;
+        Some(ProcessIdentity {
+            pid,
+            start_time: proc.start_time(),
+            name: proc.name().to_string_lossy().to_string(),
+        })
     }
 
     pub fn snapshot(&self, sort: SortKey) -> Result<MetricsSnapshot, String> {
@@ -148,6 +162,7 @@ impl SystemMetrics {
             let name = process.name().to_string_lossy().to_string();
             let cpu = process.cpu_usage();
             let mem = process.memory();
+            let start_time = process.start_time();
             let exe = process
                 .exe()
                 .map(|p| p.to_string_lossy().to_string())
@@ -157,6 +172,7 @@ impl SystemMetrics {
                 cpu,
                 mem,
                 pid: pid.as_u32() as u64,
+                start_time,
                 exe,
             });
         }
@@ -236,8 +252,64 @@ pub struct ProcInfo {
     pub cpu: f32,
     pub mem: u64,
     pub pid: u64,
+    pub start_time: u64,
     /// Absolute path to the executable (may be empty for some system processes).
     pub exe: String,
+}
+
+/// Stable identity of a process used for safe termination verification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessIdentity {
+    pub pid: u64,
+    pub start_time: u64,
+    pub name: String,
+}
+
+/// Pure validation function to ensure process termination targets the intended process.
+/// Prevents terminating replacement processes when PIDs are reused.
+pub fn validate_process_termination(
+    target_pid: u64,
+    expected_start_time: u64,
+    expected_name: Option<&str>,
+    own_pid: u64,
+    live_proc: Option<&ProcessIdentity>,
+) -> Result<(), String> {
+    if target_pid == 0 || target_pid == 4 {
+        return Err(format!(
+            "Process {target_pid} is a protected Windows system process and cannot be terminated."
+        ));
+    }
+    if target_pid == own_pid {
+        return Err("Cannot terminate Windash process from within itself.".into());
+    }
+    let live = match live_proc {
+        Some(p) => p,
+        None => {
+            return Err(
+                "The process changed or exited before it could be ended. Refresh and try again."
+                    .into(),
+            );
+        }
+    };
+    if live.pid != target_pid || live.start_time != expected_start_time {
+        return Err(
+            "The process changed or exited before it could be ended. Refresh and try again.".into(),
+        );
+    }
+    if let Some(exp_name) = expected_name {
+        let exp_trimmed = exp_name.trim();
+        if !exp_trimmed.is_empty() {
+            let norm_live = live.name.trim_end_matches(".exe").to_lowercase();
+            let norm_exp = exp_trimmed.trim_end_matches(".exe").to_lowercase();
+            if norm_live != norm_exp {
+                return Err(
+                    "The process changed or exited before it could be ended. Refresh and try again."
+                        .into(),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -261,5 +333,87 @@ mod tests {
 
         m.interval = Duration::from_secs(120);
         assert_eq!(m.elapsed_secs(), 1.0);
+    }
+
+    #[test]
+    fn test_validate_process_termination_allowed() {
+        let live = ProcessIdentity {
+            pid: 1234,
+            start_time: 5000,
+            name: "notepad.exe".into(),
+        };
+        let res = validate_process_termination(1234, 5000, Some("notepad"), 9999, Some(&live));
+        assert!(res.is_ok());
+
+        let res_exact =
+            validate_process_termination(1234, 5000, Some("notepad.exe"), 9999, Some(&live));
+        assert!(res_exact.is_ok());
+
+        let res_no_name = validate_process_termination(1234, 5000, None, 9999, Some(&live));
+        assert!(res_no_name.is_ok());
+    }
+
+    #[test]
+    fn test_validate_process_termination_mismatch_start_time() {
+        let live = ProcessIdentity {
+            pid: 1234,
+            start_time: 6000, // different start time (PID reused)
+            name: "notepad.exe".into(),
+        };
+        let res = validate_process_termination(1234, 5000, Some("notepad.exe"), 9999, Some(&live));
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("changed or exited"));
+    }
+
+    #[test]
+    fn test_validate_process_termination_missing() {
+        let res = validate_process_termination(1234, 5000, Some("notepad.exe"), 9999, None);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("changed or exited"));
+    }
+
+    #[test]
+    fn test_validate_process_termination_own_pid() {
+        let live = ProcessIdentity {
+            pid: 9999,
+            start_time: 5000,
+            name: "windash.exe".into(),
+        };
+        let res = validate_process_termination(9999, 5000, Some("windash.exe"), 9999, Some(&live));
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("from within itself"));
+    }
+
+    #[test]
+    fn test_validate_process_termination_protected_pids() {
+        let live_zero = ProcessIdentity {
+            pid: 0,
+            start_time: 0,
+            name: "System Idle Process".into(),
+        };
+        let res0 = validate_process_termination(0, 0, None, 9999, Some(&live_zero));
+        assert!(res0.is_err());
+        assert!(res0.unwrap_err().contains("protected"));
+
+        let live_four = ProcessIdentity {
+            pid: 4,
+            start_time: 100,
+            name: "System".into(),
+        };
+        let res4 = validate_process_termination(4, 100, None, 9999, Some(&live_four));
+        assert!(res4.is_err());
+        assert!(res4.unwrap_err().contains("protected"));
+    }
+
+    #[test]
+    fn test_validate_process_termination_name_mismatch() {
+        let live = ProcessIdentity {
+            pid: 1234,
+            start_time: 5000,
+            name: "malicious.exe".into(),
+        };
+        let res = validate_process_termination(1234, 5000, Some("notepad.exe"), 9999, Some(&live));
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("changed or exited"));
     }
 }

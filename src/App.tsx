@@ -210,6 +210,15 @@ export default function App() {
       else u();
     });
 
+    listenSafe<string>("windash://theme", (payload) => {
+      if (payload === "light" || payload === "dark") {
+        setSystemTheme(payload);
+      }
+    }).then((u) => {
+      if (isMounted) unlistens.push(u);
+      else u();
+    });
+
     const onResize = () => {
       if (!isTauri()) setWidth(window.innerWidth);
     };
@@ -373,6 +382,7 @@ export default function App() {
           }}
           onError={(message, detail) => showError(message, detail)}
           onToast={flash}
+          onProcessEnded={refresh}
           loading={!metrics}
         />
       )}
